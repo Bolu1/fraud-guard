@@ -1,0 +1,36 @@
+# fraud-guard.config.yml
+
+# Storage configuration
+storage:
+  # Database file path (auto-detected if not specified)
+  # Development default: ./.fraud-guard/data/fraud-data.db
+  # Production default: ~/.fraud-guard/data/fraud-data.db
+  path: ./fraud-data/fraud-data.db
+  
+  # Data retention policies
+  retention:
+    predictions_days: 90      # Keep predictions for 90 days
+    feedback_days: 365        # Keep feedback for 1 year
+
+# Model configuration
+model:
+  # Model storage directory (auto-detected if not specified)
+  # Development default: ./.fraud-guard/models
+  # Production default: ~/.fraud-guard/models
+  path: ./fraud-models
+  
+  # Decision thresholds
+  thresholds:
+    review: 0.4    # Score >= 0.4 triggers manual review
+    reject: 0.7    # Score >= 0.7 triggers automatic rejection
+
+# Retraining configuration
+retraining:
+  enabled: false              # Enable/disable automatic retraining
+  python_path: python3        # Path to Python executable
+  min_samples: 200            # Minimum feedback samples before retraining
+  schedule: "0 2 * * *"       # Cron expression (2 AM daily)
+
+# Feature engineering
+features:
+  velocity_checks: true       # Enable velocity tracking

@@ -1,0 +1,86 @@
+{
+  "name": "fraud-guard",
+  "version": "1.0.0",
+  "description": "",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "require": "./dist/index.js",
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "bin": {
+    "fraud-guard": "dist/cli/index.js"
+  },
+  "files": [
+    "dist",
+    "models/baseline.onnx",
+    "training",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "clean": "rm -rf dist"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bolu1/fraud-guard.git"
+  },
+  "keywords": [
+    "fraud",
+    "fraud-detection",
+    "payment-fraud",
+    "anomaly-detection",
+    "machine-learning",
+    "risk-scoring",
+    "chargeback-prevention",
+    "transaction-monitoring",
+    "velocity-checks",
+    "payment-security",
+    "ecommerce",
+    "fintech",
+    "typescript",
+    "self-hosted",
+    "onnx"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/bolu1/fraud-guard/issues"
+  },
+  "homepage": "https://github.com/bolu1/fraud-guard#readme",
+  "dependencies": {
+    "better-sqlite3": "^12.5.0",
+    "commander": "^14.0.2",
+    "js-yaml": "^4.1.1",
+    "nanoid": "^5.1.6",
+    "onnxruntime-node": "^1.23.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/jest": "^30.0.0",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^25.0.3",
+    "@typescript-eslint/eslint-plugin": "^8.50.1",
+    "@typescript-eslint/parser": "^8.50.1",
+    "eslint": "^9.39.2",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.4",
+    "jest": "^30.2.0",
+    "prettier": "^3.7.4",
+    "ts-jest": "^29.4.6",
+    "typescript": "^5.9.3"
+  }
+}
