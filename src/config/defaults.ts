@@ -3,52 +3,44 @@ import * as os from 'os';
 import { FraudGuardConfig, LogLevel } from '../interfaces/types';
 
 /**
- * Get default paths based on environment
- * Always uses home directory to avoid accidental commits
+ * Get default paths for fraud-guard data
+ * All paths are namespaced by project name to avoid conflicts
  */
-function getDefaultPaths() {
-  const homeDir = os.homedir();
-  const baseDir = path.join(homeDir, '.fraud-guard');
-
-  return {
-    storage: path.join(baseDir, 'data', 'fraud-data.db'),
-    models: path.join(baseDir, 'models'),
-  };
+function getDefaultBasePath(): string {
+  return path.join(os.homedir(), '.fraud-guard');
 }
 
 /**
- * Default configuration when no config file exists
- * Storage is NOT included in defaults - only available with config file
+ * Get baseline model path (shared across all projects)
  */
-export const DEFAULT_CONFIG: FraudGuardConfig = {
-  model: {
-    thresholds: {
-      review: 0.4,
-      reject: 0.7,
-    },
-  },
-
-  logging: {
-    level: LogLevel.INFO,
-    console: true,
-  },
-};
+export function getBaselineModelPath(): string {
+  return path.join(getDefaultBasePath(), 'baseline');
+}
 
 /**
- * Default configuration when config file IS present
- * Includes storage and other features
+ * Get project-specific base path
  */
-export const DEFAULT_CONFIG_WITH_FILE: FraudGuardConfig = {
+export function getProjectBasePath(projectName: string): string {
+  return path.join(getDefaultBasePath(), 'projects', projectName);
+}
+
+/**
+ * Default configuration (no config file)
+ * NOTE: project.name is REQUIRED - no default provided
+ * User MUST provide this in config file
+ */
+export const DEFAULT_CONFIG: Partial<FraudGuardConfig> = {
+  // project.name is REQUIRED - no default
+
   storage: {
-    path: getDefaultPaths().storage,
+    path: undefined, // Will be derived from project.name
     retention: {
       predictions_days: 90,
-      feedback_days: 365,
     },
   },
 
   model: {
-    path: getDefaultPaths().models,
+    path: undefined, // Will be derived from project.name
     thresholds: {
       review: 0.4,
       reject: 0.7,
@@ -58,12 +50,8 @@ export const DEFAULT_CONFIG_WITH_FILE: FraudGuardConfig = {
   retraining: {
     enabled: false,
     python_path: 'python3',
-    min_samples: 200,
-    schedule: '0 2 * * *',
-  },
-
-  features: {
-    velocity_checks: true,
+    min_samples: 100,
+    schedule: '0 2 * * *', // 2 AM daily
   },
 
   logging: {
@@ -73,8 +61,15 @@ export const DEFAULT_CONFIG_WITH_FILE: FraudGuardConfig = {
 };
 
 /**
- * Get default paths for storage and models
+ * Get default storage path for a project
  */
-export function getDefaultStoragePaths() {
-  return getDefaultPaths();
+export function getDefaultStoragePath(projectName: string): string {
+  return path.join(getProjectBasePath(projectName), 'data', 'fraud-data.db');
+}
+
+/**
+ * Get default model path for a project
+ */
+export function getDefaultModelPath(projectName: string): string {
+  return path.join(getProjectBasePath(projectName), 'models');
 }

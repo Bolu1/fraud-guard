@@ -1,104 +1,85 @@
-import { ModelMetadata, TransactionData, FeatureVector } from '../interfaces/types';
-import { MetadataLoader } from './metadata';
-import { InferenceEngine } from './inference';
-import { FeatureExtractor } from '../features/extractor';
-import { ModelError } from '../utils/errors';
-import {
-  resolveModelFile,
-  resolveMetadataFile,
-  initializeModelDirectory,
-} from '../utils/paths';
+import * as path from 'path';
+import { ModelInfo, TransactionData, PredictionResult, ScalerParams } from '../interfaces/types';
+import { TensorFlowInference } from './inference';
+import { extractFeatures, featureVectorToArray, standardizeFeatures, reshapeForModel } from './feature-extractor';
+import { loadModelMetadata, loadScalerParams } from './metadata';
+import { resolveModelFile } from '../utils/paths';
+import { ModelError, InitializationError } from '../utils/errors';
+import { Logger } from '../utils/logger';
 
 /**
- * Model prediction result (internal)
- */
-export interface PredictionResult {
-  score: number; // Fraud probability (0-1)
-  label: number; // Binary classification (0 or 1)
-  probabilities: {
-    notFraud: number; // Probability of class 0
-    fraud: number; // Probability of class 1
-  };
-}
-
-/**
- * Model manager
- * Orchestrates model loading, feature extraction, and prediction
+ * Model manager - handles model lifecycle and predictions
  */
 export class ModelManager {
-  private metadata: ModelMetadata | null = null;
-  private inferenceEngine: InferenceEngine;
-  private featureExtractor: FeatureExtractor | null = null;
-  private modelDir: string | null = null;
+  private modelDir: string;
+  private inference: TensorFlowInference;
+  private scaler: ScalerParams | null = null;
+  private logger: Logger;
+  private initialized: boolean = false;
 
-  constructor() {
-    this.inferenceEngine = new InferenceEngine();
+  constructor(modelDir: string, logger: Logger) {
+    this.modelDir = modelDir;
+    this.logger = logger;
+    this.inference = new TensorFlowInference(logger);
   }
 
   /**
-   * Initialize model from directory
-   * Loads model, metadata, and sets up feature extractor
+   * Initialize model manager
    */
-  async initialize(modelDir: string): Promise<void> {
+  async initialize(): Promise<void> {
+    if (this.initialized) {
+      this.logger.debug('Model already initialized');
+      return;
+    }
+
     try {
-      this.modelDir = modelDir;
+      this.logger.info('Initializing model...');
 
-      // Initialize model directory 
-      await initializeModelDirectory(modelDir);
+      this.scaler = loadScalerParams(this.modelDir);
+      this.logger.debug('Scaler parameters loaded');
 
-      // Resolve paths
-      const modelFile = resolveModelFile(modelDir);
-      const metadataFile = resolveMetadataFile(modelDir);
+      const metadata = loadModelMetadata(this.modelDir);
+      this.logger.debug('Model metadata loaded');
 
-      // Load metadata
-      this.metadata = MetadataLoader.load(metadataFile);
+      const modelFile = resolveModelFile(this.modelDir);
+      await this.inference.loadModel(modelFile);
 
-      // Load ONNX model
-      await this.inferenceEngine.loadModel(modelFile);
-
-      // Create feature extractor
-      this.featureExtractor = new FeatureExtractor(this.metadata);
+      this.initialized = true;
+      this.logger.info('Model initialization complete');
     } catch (error: any) {
-      throw new ModelError(`Failed to initialize model: ${error.message}`);
+      throw new InitializationError(`Failed to initialize model: ${error.message}`);
     }
   }
 
   /**
-   * Predict fraud for a transaction
+   * Make prediction for a transaction
    */
   async predict(transaction: TransactionData): Promise<PredictionResult> {
-    if (!this.featureExtractor || !this.metadata) {
+    if (!this.initialized) {
       throw new ModelError('Model not initialized. Call initialize() first.');
     }
 
+    if (!this.scaler) {
+      throw new ModelError('Scaler not loaded');
+    }
+
     try {
-      // Extract features from transaction
-      const features: FeatureVector = this.featureExtractor.extract(transaction);
+      const features = extractFeatures(transaction);
+      this.logger.debug('Features extracted');
 
-      // Standardize features
-      const standardizedFeatures: Float32Array = this.featureExtractor.standardize(features);
+      const featureArray = featureVectorToArray(features, this.scaler.feature_columns);
+      this.logger.debug(`Feature array created: ${featureArray.length} features`);
 
-      // Run inference
-      const probabilities: Float32Array = await this.inferenceEngine.predict(
-        standardizedFeatures
-      );
+      const standardized = standardizeFeatures(featureArray, this.scaler.mean, this.scaler.std);
+      this.logger.debug('Features standardized');
 
-      // Extract results
-      // probabilities = [prob_not_fraud, prob_fraud]
-      const notFraudProb = probabilities[0];
-      const fraudProb = probabilities[1];
+      const reshaped = reshapeForModel(standardized);
+      this.logger.debug('Features reshaped for model');
 
-      // Determine classification (threshold 0.5)
-      const label = fraudProb > 0.5 ? 1 : 0;
+      const result = await this.inference.predict(reshaped);
+      this.logger.debug(`Prediction complete: score=${result.score}`);
 
-      return {
-        score: fraudProb,
-        label,
-        probabilities: {
-          notFraud: notFraudProb,
-          fraud: fraudProb,
-        },
-      };
+      return result;
     } catch (error: any) {
       if (error instanceof ModelError) {
         throw error;
@@ -108,56 +89,66 @@ export class ModelManager {
   }
 
   /**
-   * Get model metadata
+   * Get model information
    */
-  getMetadata(): ModelMetadata {
-    if (!this.metadata) {
-      throw new ModelError('Model not initialized');
-    }
-    return this.metadata;
+  getModelInfo(): ModelInfo {
+    const version = this.getModelVersion();
+    const isBaseline = this.modelDir.includes('baseline');
+
+    return {
+      version: version,
+      modelPath: this.modelDir,
+      isBaseline: isBaseline,
+    };
   }
 
   /**
-   * Get model version
+   * Get model version from directory name
    */
-  getVersion(): string {
-    if (!this.metadata) {
-      throw new ModelError('Model not initialized');
+  private getModelVersion(): string {
+    const dirName = path.basename(this.modelDir);
+
+    if (dirName === 'baseline') {
+      return 'v1.0.0';
     }
-    return MetadataLoader.getVersion(this.metadata);
+
+    if (dirName.startsWith('retrained-')) {
+      return dirName.replace('retrained-', '');
+    }
+
+    return dirName;
   }
 
   /**
-   * Get model AUC score
+   * Reload model (for hot-reloading after retraining)
    */
-  getAucScore(): number {
-    if (!this.metadata) {
-      throw new ModelError('Model not initialized');
-    }
-    return MetadataLoader.getAucScore(this.metadata);
-  }
+  async reload(newModelDir: string): Promise<void> {
+    this.logger.info(`Reloading model from: ${newModelDir}`);
 
-  /**
-   * Get model directory
-   */
-  getModelDirectory(): string | null {
-    return this.modelDir;
+    this.dispose();
+
+    this.modelDir = newModelDir;
+    this.initialized = false;
+
+    await this.initialize();
+
+    this.logger.info('Model reloaded successfully');
   }
 
   /**
    * Check if model is initialized
    */
   isInitialized(): boolean {
-    return this.metadata !== null && this.inferenceEngine.isLoaded();
+    return this.initialized;
   }
 
   /**
-   * Close model and free resources
+   * Clean up resources
    */
-  async close(): Promise<void> {
-    await this.inferenceEngine.close();
-    this.metadata = null;
-    this.featureExtractor = null;
-    this.modelDir = null;
+  dispose(): void {
+    this.inference.dispose();
+    this.scaler = null;
+    this.initialized = false;
+    this.logger.debug('Model manager disposed');
   }
 }

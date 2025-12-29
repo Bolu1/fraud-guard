@@ -2,90 +2,69 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { InitializationError } from './errors';
+import { getBaselineModelPath, getProjectBasePath } from '../config/defaults';
 
-/**
- * Resolve model path
- * Priority:
- * 1. Config-specified path
- * 2. Home directory default
- * 3. Package bundled model
- */
-export function resolveModelPath(configPath?: string): string {
-  // If user specified a path in config, use it
+export function resolveStoragePath(projectName: string, configPath?: string): string {
   if (configPath) {
     return configPath;
   }
 
-  // Default: home directory
-  const homeDir = os.homedir();
-  const defaultPath = path.join(homeDir, '.fraud-guard', 'models');
-
-  // Check if model exists in home directory
-  const modelFile = path.join(defaultPath, 'baseline.onnx');
-  if (fs.existsSync(modelFile)) {
-    return defaultPath;
+  if (process.env.FRAUD_GUARD_DATA_PATH) {
+    return process.env.FRAUD_GUARD_DATA_PATH;
   }
 
-  // Fall back to package bundled model
-  const packageModelPath = path.join(__dirname, '../../models');
-  return packageModelPath;
+  return path.join(getProjectBasePath(projectName), 'data', 'fraud-data.db');
 }
 
-/**
- * Resolve model file path (actual .onnx file)
- */
+export function resolveModelPath(projectName: string, configPath?: string): string {
+  if (configPath) {
+    return configPath;
+  }
+
+  if (process.env.FRAUD_GUARD_MODEL_PATH) {
+    return process.env.FRAUD_GUARD_MODEL_PATH;
+  }
+
+  const projectModelPath = path.join(getProjectBasePath(projectName), 'models');
+  const currentModelLink = path.join(projectModelPath, 'current');
+
+  if (fs.existsSync(currentModelLink)) {
+    return currentModelLink;
+  }
+
+  return getBaselineModelPath();
+}
+
 export function resolveModelFile(modelDir: string): string {
-  // Look for current.onnx symlink first
-  const currentModel = path.join(modelDir, 'current.onnx');
-  if (fs.existsSync(currentModel)) {
-    return currentModel;
+  const modelFile = path.join(modelDir, 'model.json');
+
+  if (!fs.existsSync(modelFile)) {
+    throw new InitializationError(`Model file not found: ${modelFile}`);
   }
 
-  // Fall back to baseline.onnx
-  const baselineModel = path.join(modelDir, 'baseline.onnx');
-  if (fs.existsSync(baselineModel)) {
-    return baselineModel;
+  return modelFile;
+}
+
+export function resolveScalerFile(modelDir: string): string {
+  const scalerFile = path.join(modelDir, 'scaler_params.json');
+
+  if (!fs.existsSync(scalerFile)) {
+    throw new InitializationError(`Scaler parameters file not found: ${scalerFile}`);
   }
 
-  throw new InitializationError(`No model file found in ${modelDir}`);
+  return scalerFile;
 }
 
-/**
- * Resolve metadata file path
- */
-export function resolveMetadataFile(modelDir: string): string {
-  const metadataFile = path.join(modelDir, 'metadata.json');
+export function resolveModelConfigFile(modelDir: string): string {
+  const configFile = path.join(modelDir, 'model_config.json');
 
-  if (!fs.existsSync(metadataFile)) {
-    throw new InitializationError(`Metadata file not found: ${metadataFile}`);
+  if (!fs.existsSync(configFile)) {
+    throw new InitializationError(`Model config file not found: ${configFile}`);
   }
 
-  return metadataFile;
+  return configFile;
 }
 
-/**
- * Resolve storage database path
- */
-export function resolveStoragePath(configPath?: string): string {
-  if (configPath) {
-    return configPath;
-  }
-
-  // Default: home directory
-  const homeDir = os.homedir();
-  return path.join(homeDir, '.fraud-guard', 'data', 'fraud-data.db');
-}
-
-/**
- * Get default base directory (home directory)
- */
-export function getDefaultBaseDirectory(): string {
-  return path.join(os.homedir(), '.fraud-guard');
-}
-
-/**
- * Ensure directory exists, create if not
- */
 export async function ensureDirectoryExists(dirPath: string): Promise<void> {
   try {
     await fs.promises.mkdir(dirPath, { recursive: true });
@@ -94,21 +73,15 @@ export async function ensureDirectoryExists(dirPath: string): Promise<void> {
   }
 }
 
-/**
- * Check if path is writable
- */
 export async function isPathWritable(filePath: string): Promise<boolean> {
   try {
     const dirPath = path.dirname(filePath);
 
-    // Check if directory exists
     if (!fs.existsSync(dirPath)) {
-      // Try to create it
       await ensureDirectoryExists(dirPath);
       return true;
     }
 
-    // Check if we can write to directory
     await fs.promises.access(dirPath, fs.constants.W_OK);
     return true;
   } catch {
@@ -116,9 +89,6 @@ export async function isPathWritable(filePath: string): Promise<boolean> {
   }
 }
 
-/**
- * Check if file exists
- */
 export function fileExists(filePath: string): boolean {
   try {
     return fs.existsSync(filePath);
@@ -127,24 +97,11 @@ export function fileExists(filePath: string): boolean {
   }
 }
 
-/**
- * Get package root directory (where models/ folder is)
- */
-export function getPackageRoot(): string {
-  // From src/utils/paths.ts, go up two levels to package root
-  return path.join(__dirname, '../..');
-}
-
-/**
- * Copy file from source to destination
- */
 export async function copyFile(source: string, destination: string): Promise<void> {
   try {
-    // Ensure destination directory exists
     const destDir = path.dirname(destination);
     await ensureDirectoryExists(destDir);
 
-    // Copy file
     await fs.promises.copyFile(source, destination);
   } catch (error: any) {
     throw new InitializationError(
@@ -153,62 +110,49 @@ export async function copyFile(source: string, destination: string): Promise<voi
   }
 }
 
-/**
- * Initialize model directory (copy baseline model if needed)
- */
-export async function initializeModelDirectory(modelDir: string): Promise<void> {
+export async function copyDirectory(source: string, destination: string): Promise<void> {
   try {
-    // Ensure directory exists
-    await ensureDirectoryExists(modelDir);
+    await ensureDirectoryExists(destination);
 
-    // Check if baseline model already exists
-    const baselineModel = path.join(modelDir, 'baseline.onnx');
-    if (fs.existsSync(baselineModel)) {
-      return; // Already initialized
-    }
+    const entries = await fs.promises.readdir(source, { withFileTypes: true });
 
-    // Copy baseline model from package
-    const packageRoot = getPackageRoot();
-    const sourceModel = path.join(packageRoot, 'models', 'baseline.onnx');
-    const sourceMetadata = path.join(packageRoot, 'models', 'metadata.json');
+    for (const entry of entries) {
+      const srcPath = path.join(source, entry.name);
+      const destPath = path.join(destination, entry.name);
 
-    if (!fs.existsSync(sourceModel)) {
-      throw new InitializationError(
-        `Baseline model not found in package: ${sourceModel}`
-      );
-    }
-
-    // Copy model and metadata
-    await copyFile(sourceModel, baselineModel);
-    await copyFile(sourceMetadata, path.join(modelDir, 'metadata.json'));
-
-    // Create current.onnx symlink pointing to baseline
-    const currentLink = path.join(modelDir, 'current.onnx');
-    if (!fs.existsSync(currentLink)) {
-      await createSymlink('baseline.onnx', currentLink);
+      if (entry.isDirectory()) {
+        await copyDirectory(srcPath, destPath);
+      } else {
+        await copyFile(srcPath, destPath);
+      }
     }
   } catch (error: any) {
     throw new InitializationError(
-      `Failed to initialize model directory: ${error.message}`
+      `Failed to copy directory from ${source} to ${destination}: ${error.message}`
     );
   }
 }
 
-/**
- * Create symbolic link (cross-platform)
- */
-async function createSymlink(target: string, linkPath: string): Promise<void> {
-  try {
-    // On Windows, symlinks require admin rights, so we'll just copy instead
-    if (process.platform === 'win32') {
-      const targetPath = path.join(path.dirname(linkPath), target);
-      await copyFile(targetPath, linkPath);
-    } else {
-      await fs.promises.symlink(target, linkPath);
-    }
-  } catch (error: any) {
-    // If symlink fails, fall back to copying
-    const targetPath = path.join(path.dirname(linkPath), target);
-    await copyFile(targetPath, linkPath);
+export async function initializeBaselineModel(): Promise<void> {
+  const baselinePath = getBaselineModelPath();
+
+  if (fs.existsSync(path.join(baselinePath, 'model.json'))) {
+    return;
   }
+
+  try {
+    const packageModelPath = path.join(__dirname, '../../models/baseline');
+
+    if (!fs.existsSync(packageModelPath)) {
+      throw new InitializationError(`Package baseline model not found at ${packageModelPath}`);
+    }
+
+    await copyDirectory(packageModelPath, baselinePath);
+  } catch (error: any) {
+    throw new InitializationError(`Failed to initialize baseline model: ${error.message}`);
+  }
+}
+
+export function getFraudGuardBaseDir(): string {
+  return path.join(os.homedir(), '.fraud-guard');
 }

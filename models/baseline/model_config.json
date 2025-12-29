@@ -1,0 +1,37 @@
+{
+  "feature_columns": [
+    "amt",
+    "hour",
+    "month",
+    "dayofweek",
+    "day",
+    "entertainment",
+    "food_dining",
+    "gas_transport",
+    "grocery_net",
+    "grocery_pos",
+    "health_fitness",
+    "home",
+    "kids_pets",
+    "misc_net",
+    "misc_pos",
+    "personal_care",
+    "shopping_net",
+    "shopping_pos",
+    "travel"
+  ],
+  "input_shape": [
+    19,
+    1
+  ],
+  "threshold": 0.5,
+  "note": "Input features must be standardized using StandardScaler parameters",
+  "required_fields": [
+    "amt",
+    "hour",
+    "month",
+    "dayofweek",
+    "day",
+    "category"
+  ]
+}

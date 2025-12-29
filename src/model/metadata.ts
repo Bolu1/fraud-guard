@@ -1,71 +1,104 @@
 import * as fs from 'fs';
-import { ModelMetadata } from '../interfaces/types';
+import * as path from 'path';
+import { ModelMetadata, ScalerParams } from '../interfaces/types';
 import { ModelError } from '../utils/errors';
-import { validateModelMetadata } from '../utils/validation';
 
 /**
- * Model metadata loader
- * Loads and validates model metadata from JSON file
+ * Load model metadata from model_config.json
  */
-export class MetadataLoader {
-  /**
-   * Load metadata from file
-   */
-  static load(metadataPath: string): ModelMetadata {
-    try {
-      // Check file exists
-      if (!fs.existsSync(metadataPath)) {
-        throw new ModelError(`Metadata file not found: ${metadataPath}`);
-      }
+export function loadModelMetadata(modelDir: string): ModelMetadata {
+  const metadataPath = path.join(modelDir, 'model_config.json');
 
-      // Read file
-      const fileContent = fs.readFileSync(metadataPath, 'utf8');
-
-      // Parse JSON
-      const metadata = JSON.parse(fileContent);
-
-      // Validate structure
-      validateModelMetadata(metadata);
-
-      return metadata as ModelMetadata;
-    } catch (error: any) {
-      if (error instanceof ModelError) {
-        throw error;
-      }
-
-      if (error.name === 'SyntaxError') {
-        throw new ModelError(`Invalid JSON in metadata file: ${error.message}`);
-      }
-
-      throw new ModelError(`Failed to load metadata: ${error.message}`);
-    }
+  if (!fs.existsSync(metadataPath)) {
+    throw new ModelError(`Model metadata not found: ${metadataPath}`);
   }
 
-  /**
-   * Get model version from metadata
-   */
-  static getVersion(metadata: ModelMetadata): string {
-    return metadata.model_version;
+  try {
+    const content = fs.readFileSync(metadataPath, 'utf8');
+    const metadata = JSON.parse(content) as ModelMetadata;
+
+    validateModelMetadata(metadata);
+
+    return metadata;
+  } catch (error: any) {
+    throw new ModelError(`Failed to load model metadata: ${error.message}`);
+  }
+}
+
+/**
+ * Load scaler parameters from scaler_params.json
+ */
+export function loadScalerParams(modelDir: string): ScalerParams {
+  const scalerPath = path.join(modelDir, 'scaler_params.json');
+
+  if (!fs.existsSync(scalerPath)) {
+    throw new ModelError(`Scaler parameters not found: ${scalerPath}`);
   }
 
-  /**
-   * Get AUC score from metadata
-   */
-  static getAucScore(metadata: ModelMetadata): number {
-    return metadata.auc_score || 0;
+  try {
+    const content = fs.readFileSync(scalerPath, 'utf8');
+    const scaler = JSON.parse(content) as ScalerParams;
+
+    validateScalerParams(scaler);
+
+    return scaler;
+  } catch (error: any) {
+    throw new ModelError(`Failed to load scaler parameters: ${error.message}`);
+  }
+}
+
+/**
+ * Validate model metadata structure
+ */
+function validateModelMetadata(metadata: ModelMetadata): void {
+  if (!metadata.feature_columns || !Array.isArray(metadata.feature_columns)) {
+    throw new ModelError('Invalid model metadata: feature_columns must be an array');
   }
 
-  /**
-   * Get feature count from metadata
-   */
-  static getFeatureCount(metadata: ModelMetadata): number {
-    return metadata.feature_columns.length;
+  if (metadata.feature_columns.length !== 19) {
+    throw new ModelError(
+      `Invalid model metadata: expected 19 features, got ${metadata.feature_columns.length}`
+    );
   }
 
-  /**
-   * Get transaction types from metadata
-   */
-  static getTransactionTypes(metadata: ModelMetadata): string[] {
-    return metadata.type_encoder_classes;
+  if (!metadata.input_shape || !Array.isArray(metadata.input_shape)) {
+    throw new ModelError('Invalid model metadata: input_shape must be an array');
+  }
+
+  if (!metadata.required_fields || !Array.isArray(metadata.required_fields)) {
+    throw new ModelError('Invalid model metadata: required_fields must be an array');
+  }
+}
+
+/**
+ * Validate scaler parameters structure
+ */
+function validateScalerParams(scaler: ScalerParams): void {
+  if (!scaler.mean || !Array.isArray(scaler.mean)) {
+    throw new ModelError('Invalid scaler parameters: mean must be an array');
+  }
+
+  if (!scaler.std || !Array.isArray(scaler.std)) {
+    throw new ModelError('Invalid scaler parameters: std must be an array');
+  }
+
+  if (!scaler.feature_columns || !Array.isArray(scaler.feature_columns)) {
+    throw new ModelError('Invalid scaler parameters: feature_columns must be an array');
+  }
+
+  if (scaler.mean.length !== scaler.std.length) {
+    throw new ModelError('Invalid scaler parameters: mean and std must have same length');
+  }
+
+  if (scaler.mean.length !== scaler.feature_columns.length) {
+    throw new ModelError(
+      'Invalid scaler parameters: mean length must match feature_columns length'
+    );
+  }
+
+  if (scaler.feature_columns.length !== 19) {
+    throw new ModelError(
+      `Invalid scaler parameters: expected 19 features, got ${scaler.feature_columns.length}`
+    );
   }
 }

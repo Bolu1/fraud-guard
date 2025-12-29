@@ -1,4 +1,4 @@
-import { TransactionData, FraudCheckResult, FraudGuardConfig } from './types';
+import { TransactionData, FraudCheckResult, FraudGuardConfig, ModelInfo } from './types';
 
 /**
  * Fraud Guard interface
@@ -22,14 +22,10 @@ export interface IFraudGuard {
    * Get model information
    * @returns Model version and metadata
    */
-  getModelInfo(): Promise<{
-    version: string;
-    aucScore: number;
-    modelPath: string | null;
-  }>;
+  getModelInfo(): ModelInfo;
 
   /**
    * Close fraud guard and release resources
    */
-  close(): Promise<void>;
+  close(): void;
 }

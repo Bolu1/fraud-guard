@@ -1,57 +1,90 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import * as yaml from 'js-yaml';
-import { FraudGuardConfig } from '../interfaces/types';
-import { DEFAULT_CONFIG, DEFAULT_CONFIG_WITH_FILE } from './defaults';
-import { validateConfig } from './validator';
-import { ConfigurationError } from '../utils/errors';
+import * as fs from "fs";
+import * as path from "path";
+import * as yaml from "js-yaml";
+import { FraudGuardConfig, LogLevel } from "../interfaces/types";
+import {
+  DEFAULT_CONFIG,
+  getDefaultStoragePath,
+  getDefaultModelPath,
+} from "./defaults";
+import { validateConfig } from "./validator";
+import { ConfigurationError } from "../utils/errors";
 
-/**
- * Name of the configuration file to look for
- */
-const CONFIG_FILE_NAME = 'fraud-guard.config.yml';
+const CONFIG_FILE_NAME = "fraud-guard.config.yml";
 
-/**
- * Load configuration from file system
- * Priority:
- * 1. Current working directory
- * 2. If no file found, use defaults (NO storage/retraining)
- */
 export function loadConfig(): FraudGuardConfig {
   const configPath = findConfigFile();
 
   if (!configPath) {
-    // No config file - return basic defaults (only model prediction)
-    return DEFAULT_CONFIG;
+    return createDefaultConfig();
   }
 
   try {
-    // Config file exists - load and merge with full defaults
     const userConfig = parseConfigFile(configPath);
-    const mergedConfig = mergeConfigs(DEFAULT_CONFIG_WITH_FILE, userConfig);
 
-    // Validate merged configuration
-    validateConfig(mergedConfig);
+    if (!userConfig.project?.name) {
+      throw new ConfigurationError(
+        "Configuration file must include project.name. Example:\n" +
+          "project:\n" +
+          '  name: "my-project"'
+      );
+    }
 
-    return mergedConfig;
+    const mergedConfig = mergeConfigs(userConfig);
+    const configWithPaths = resolvePaths(mergedConfig);
+    validateConfig(configWithPaths);
+
+    return configWithPaths;
   } catch (error: any) {
+    if (error instanceof ConfigurationError) {
+      throw error;
+    }
     throw new ConfigurationError(
-      `Failed to load configuration from ${configPath}: ${error?.message}`
+      `Failed to load configuration: ${error.message}`
     );
   }
 }
 
-/**
- * Check if configuration file exists
- */
 export function configFileExists(): boolean {
   return findConfigFile() !== null;
 }
 
-/**
- * Find configuration file
- * Looks in current working directory only
- */
+
+function createDefaultConfig(): FraudGuardConfig {
+  const defaultProjectName = 'default-project';
+
+  const config: FraudGuardConfig = {
+    project: {
+      name: defaultProjectName,
+    },
+    storage: {
+      path: getDefaultStoragePath(defaultProjectName),
+      retention: {
+        predictions_days: DEFAULT_CONFIG.storage?.retention?.predictions_days || 90,
+      }, 
+    },
+    model: {
+      path: undefined,
+      thresholds: {
+        review: DEFAULT_CONFIG.model?.thresholds?.review || 0.4,
+        reject: DEFAULT_CONFIG.model?.thresholds?.reject || 0.7,
+      },
+    },
+    retraining: {
+      enabled: DEFAULT_CONFIG.retraining?.enabled || false,
+      python_path: DEFAULT_CONFIG.retraining?.python_path || 'python3',
+      min_samples: DEFAULT_CONFIG.retraining?.min_samples || 100,
+      schedule: DEFAULT_CONFIG.retraining?.schedule || '0 2 * * *',
+    },
+    logging: {
+      level: DEFAULT_CONFIG.logging?.level || LogLevel.INFO,
+      console: DEFAULT_CONFIG.logging?.console !== undefined ? DEFAULT_CONFIG.logging.console : true,
+    },
+  };
+
+  return config;
+}
+
 function findConfigFile(): string | null {
   const cwd = process.cwd();
   const configPath = path.join(cwd, CONFIG_FILE_NAME);
@@ -63,95 +96,83 @@ function findConfigFile(): string | null {
   return null;
 }
 
-/**
- * Parse YAML configuration file
- */
 function parseConfigFile(filePath: string): Partial<FraudGuardConfig> {
   try {
-    const fileContents = fs.readFileSync(filePath, 'utf8');
+    const fileContents = fs.readFileSync(filePath, "utf8");
     const parsed = yaml.load(fileContents) as Partial<FraudGuardConfig>;
 
-    if (!parsed || typeof parsed !== 'object') {
-      throw new Error('Configuration file is empty or invalid');
+    if (!parsed || typeof parsed !== "object") {
+      throw new Error("Configuration file is empty or invalid");
     }
 
     return parsed;
   } catch (error: any) {
-    if (error.name === 'YAMLException') {
+    if (error.name === "YAMLException") {
       throw new ConfigurationError(`Invalid YAML syntax: ${error.message}`);
     }
     throw error;
   }
 }
 
-/**
- * Deep merge configuration objects
- * User config overrides defaults
- */
-function mergeConfigs(
-  defaults: FraudGuardConfig,
-  userConfig: Partial<FraudGuardConfig>
-): FraudGuardConfig {
-  const merged: FraudGuardConfig = JSON.parse(JSON.stringify(defaults));
+function mergeConfigs(userConfig: Partial<FraudGuardConfig>): FraudGuardConfig {
+  const merged: any = {
+    project: {
+      name: userConfig.project?.name,
+    },
+    storage: {
+      path: userConfig.storage?.path,
+      retention: {
+        predictions_days:
+          userConfig.storage?.retention?.predictions_days ||
+          DEFAULT_CONFIG.storage?.retention?.predictions_days,
+      },
+    },
+    model: {
+      path: userConfig.model?.path,
+      thresholds: {
+        review:
+          userConfig.model?.thresholds?.review ||
+          DEFAULT_CONFIG.model?.thresholds?.review,
+        reject:
+          userConfig.model?.thresholds?.reject ||
+          DEFAULT_CONFIG.model?.thresholds?.reject,
+      },
+    },
+    retraining: {
+      enabled:
+        userConfig.retraining?.enabled ?? DEFAULT_CONFIG.retraining?.enabled,
+      python_path:
+        userConfig.retraining?.python_path ||
+        DEFAULT_CONFIG.retraining?.python_path,
+      min_samples:
+        userConfig.retraining?.min_samples ||
+        DEFAULT_CONFIG.retraining?.min_samples,
+      schedule:
+        userConfig.retraining?.schedule || DEFAULT_CONFIG.retraining?.schedule,
+    },
+    logging: {
+      level: userConfig.logging?.level || DEFAULT_CONFIG.logging?.level,
+      console: userConfig.logging?.console ?? DEFAULT_CONFIG.logging?.console,
+    },
+  };
 
-  // Merge storage
-  if (userConfig.storage) {
-    merged.storage = {
-      ...merged.storage,
-      ...userConfig.storage,
-    };
-    if (userConfig.storage.retention) {
-      merged.storage.retention = {
-        ...merged.storage?.retention,
-        ...userConfig.storage.retention,
-      };
-    }
-  }
-
-  // Merge model
-  if (userConfig.model) {
-    merged.model = {
-      ...merged.model,
-      ...userConfig.model,
-    };
-    if (userConfig.model.thresholds) {
-      merged.model.thresholds = {
-        ...merged.model?.thresholds,
-        ...userConfig.model.thresholds,
-      };
-    }
-  }
-
-  // Merge retraining
-  if (userConfig.retraining) {
-    merged.retraining = {
-      ...merged.retraining,
-      ...userConfig.retraining,
-    };
-  }
-
-  // Merge features
-  if (userConfig.features) {
-    merged.features = {
-      ...merged.features,
-      ...userConfig.features,
-    };
-  }
-
-  // Merge logging
-  if (userConfig.logging) {
-    merged.logging = {
-      ...merged.logging,
-      ...userConfig.logging,
-    };
-  }
-
-  return merged;
+  return merged as FraudGuardConfig;
 }
 
-/**
- * Get configuration file path if it exists
- */
+function resolvePaths(config: FraudGuardConfig): FraudGuardConfig {
+  const projectName = config.project.name;
+
+  if (!config.storage.path) {
+    config.storage.path = getDefaultStoragePath(projectName);
+  }
+
+  if (!config.model.path) {
+    config.model.path = getDefaultModelPath(projectName);
+  }
+
+  return config;
+}
+
 export function getConfigFilePath(): string | null {
   return findConfigFile();
 }

@@ -1,90 +1,96 @@
-import * as ort from 'onnxruntime-node';
-import * as fs from 'fs';
+import * as tf from '@tensorflow/tfjs-node';
+import { PredictionResult } from '../interfaces/types';
 import { ModelError } from '../utils/errors';
+import { Logger } from '../utils/logger';
 
 /**
- * ONNX inference engine
- * Handles low-level model loading and prediction
+ * TensorFlow.js inference engine
  */
-export class InferenceEngine {
-  private session: ort.InferenceSession | null = null;
-  private modelPath: string | null = null;
+export class TensorFlowInference {
+  private model: tf.LayersModel | null = null;
+  private logger: Logger;
+
+  constructor(logger: Logger) {
+    this.logger = logger;
+  }
 
   /**
-   * Load ONNX model
+   * Load TensorFlow.js model
    */
   async loadModel(modelPath: string): Promise<void> {
     try {
-      // Validate model file exists
-      if (!fs.existsSync(modelPath)) {
-        throw new ModelError(`Model file not found: ${modelPath}`);
-      }
+      this.logger.debug(`Loading model from: ${modelPath}`);
 
-      // Load ONNX session
-      this.session = await ort.InferenceSession.create(modelPath);
-      this.modelPath = modelPath;
+      const modelUrl = `file://${modelPath}`;
+      this.model = await tf.loadLayersModel(modelUrl);
+
+      this.logger.info('Model loaded successfully');
     } catch (error: any) {
-      if (error instanceof ModelError) {
-        throw error;
-      }
-
-      throw new ModelError(`Failed to load ONNX model: ${error.message}`);
+      throw new ModelError(`Failed to load model: ${error.message}`);
     }
   }
 
   /**
-   * Run inference on feature vector
-   * Returns probabilities [prob_class_0, prob_class_1]
+   * Run prediction on standardized features
    */
-  async predict(features: Float32Array): Promise<Float32Array> {
-    if (!this.session) {
+  async predict(reshapedFeatures: number[][][]): Promise<PredictionResult> {
+    if (!this.model) {
       throw new ModelError('Model not loaded. Call loadModel() first.');
     }
 
+    let inputTensor: tf.Tensor | null = null;
+    let outputTensor: tf.Tensor | null = null;
+
     try {
-      // Create input tensor
-      // Shape: [1, 12] - 1 sample, 12 features
-      const inputTensor = new ort.Tensor('float32', features, [1, 12]);
+      inputTensor = tf.tensor3d(reshapedFeatures);
 
-      // Prepare feeds
-      const feeds = { float_input: inputTensor };
+      outputTensor = this.model.predict(inputTensor) as tf.Tensor;
 
-      // Run inference
-      const results = await this.session.run(feeds);
+      const outputData = await outputTensor.data();
 
-      // Extract probabilities
-      // Output: { probabilities: Tensor }
-      const probabilities = results.probabilities.data as Float32Array;
+      const score = outputData[0];
 
-      return probabilities;
+      if (!isFinite(score) || score < 0 || score > 1) {
+        throw new ModelError(`Invalid prediction score: ${score}`);
+      }
+
+      const result: PredictionResult = {
+        score: score,
+        label: score >= 0.5 ? 1 : 0,
+        probabilities: {
+          notFraud: 1 - score,
+          fraud: score,
+        },
+      };
+
+      return result;
     } catch (error: any) {
-      throw new ModelError(`Inference failed: ${error.message}`);
+      throw new ModelError(`Prediction failed: ${error.message}`);
+    } finally {
+      if (inputTensor) {
+        inputTensor.dispose();
+      }
+      if (outputTensor) {
+        outputTensor.dispose();
+      }
     }
   }
 
   /**
-   * Get loaded model path
+   * Clean up model resources
    */
-  getModelPath(): string | null {
-    return this.modelPath;
+  dispose(): void {
+    if (this.model) {
+      this.model.dispose();
+      this.model = null;
+      this.logger.debug('Model disposed');
+    }
   }
 
   /**
    * Check if model is loaded
    */
   isLoaded(): boolean {
-    return this.session !== null;
-  }
-
-  /**
-   * Close session and free resources
-   */
-  async close(): Promise<void> {
-    if (this.session) {
-      // ONNX Runtime doesn't have explicit close in Node.js binding
-      // Setting to null allows garbage collection
-      this.session = null;
-      this.modelPath = null;
-    }
+    return this.model !== null;
   }
 }

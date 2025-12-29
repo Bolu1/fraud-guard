@@ -1,83 +1,127 @@
-// ===== Enums =====
+/**
+ * Fraud Guard - Type Definitions
+ * All TypeScript interfaces, types, and enums for the package
+ */
 
-export enum TransactionType {
-  CASH_IN = 'CASH_IN',
-  CASH_OUT = 'CASH_OUT',
-  DEBIT = 'DEBIT',
-  PAYMENT = 'PAYMENT',
-  TRANSFER = 'TRANSFER'
+// ========================================
+// ENUMS
+// ========================================
+
+export enum TransactionCategory {
+  ENTERTAINMENT = "entertainment",
+  FOOD_DINING = "food_dining",
+  GAS_TRANSPORT = "gas_transport",
+  GROCERY_NET = "grocery_net",
+  GROCERY_POS = "grocery_pos",
+  HEALTH_FITNESS = "health_fitness",
+  HOME = "home",
+  KIDS_PETS = "kids_pets",
+  MISC_NET = "misc_net",
+  MISC_POS = "misc_pos",
+  PERSONAL_CARE = "personal_care",
+  SHOPPING_NET = "shopping_net",
+  SHOPPING_POS = "shopping_pos",
+  TRAVEL = "travel",
 }
 
 export enum RiskLevel {
-  LOW = 'low',
-  MEDIUM = 'medium',
-  HIGH = 'high'
+  LOW = "low",
+  MEDIUM = "medium",
+  HIGH = "high",
 }
 
 export enum Action {
-  ACCEPT = 'accept',
-  REVIEW = 'review',
-  REJECT = 'reject'
+  ACCEPT = "accept",
+  REVIEW = "review",
+  REJECT = "reject",
 }
 
 export enum LogLevel {
-  DEBUG = 'debug',
-  INFO = 'info',
-  WARN = 'warn',
-  ERROR = 'error'
+  DEBUG = "debug",
+  INFO = "info",
+  WARN = "warn",
+  ERROR = "error",
 }
 
-// ===== Transaction Input =====
+// ========================================
+// TRANSACTION INPUT
+// ========================================
 
 export interface TransactionData {
-  // Required fields
-  step: number;                           // Time step
-  type: TransactionType;                  // Transaction type
-  amount: number;                         // Transaction amount
-  
-  // Origin account balances
-  oldBalanceOrigin: number;               // Balance before transaction
-  newBalanceOrigin: number;               // Balance after transaction
-  
-  // Destination account balances
-  oldBalanceDestination: number;          // Balance before transaction
-  newBalanceDestination: number;          // Balance after transaction
-  
-  // Optional fields
-  id?: string;                            // Transaction ID (for reference)
-  timestamp?: Date | string;              // Transaction timestamp
+  amount: number;
+  timestamp: Date;
+  category: TransactionCategory;
+  id?: string;
+  customerId?: string;
+  walletBalance?: number;
+  ipAddress?: string;
+  deviceId?: string;
 }
 
-// ===== Fraud Check Result =====
+// ========================================
+// FRAUD CHECK RESULT
+// ========================================
 
 export interface FraudCheckResult {
-  // Unique check ID
   id: string;
-  
-  // Transaction reference
   transactionId?: string;
-  
-  // Fraud assessment
-  score: number;                          // Fraud probability (0-1)
-  isFraud: boolean;                       // Binary classification
-  risk: RiskLevel;                        // Risk level
-  action: Action;                         // Recommended action
-  
-  // Explanation
-  reasons: string[];                      // Why this decision was made
-  
-  // Metadata
+  score: number;
+  risk: RiskLevel;
+  action: Action;
+  reasons: string[];
   timestamp: Date;
   modelVersion: string;
 }
 
-// ===== Configuration Types =====
+// ========================================
+// FEEDBACK
+// ========================================
+
+export interface FeedbackData {
+  actualFraud: boolean;
+  notes?: string;
+  discoveredAt?: Date;
+}
+
+// ========================================
+// MODEL METADATA
+// ========================================
+
+export interface ModelInfo {
+  version: string;
+  accuracy?: number;
+  modelPath: string;
+  isBaseline: boolean;
+  trainingSamples?: number;
+  createdAt?: Date;
+}
+
+export interface ModelMetadata {
+  feature_columns: string[];
+  input_shape: [number, number];
+  threshold: number;
+  note: string;
+  required_fields: string[];
+}
+
+export interface ScalerParams {
+  mean: number[];
+  std: number[];
+  feature_columns: string[];
+}
+
+// ========================================
+// CONFIGURATION TYPES
+// ========================================
+
+export interface ProjectConfig {
+  name: string;
+}
 
 export interface StorageConfig {
   path?: string;
   retention?: {
     predictions_days?: number;
-    feedback_days?: number;
   };
 }
 
@@ -96,47 +140,144 @@ export interface RetrainingConfig {
   schedule?: string;
 }
 
-export interface FeaturesConfig {
-  velocity_checks?: boolean;
-}
-
 export interface LoggingConfig {
   level?: LogLevel;
   console?: boolean;
 }
 
 export interface FraudGuardConfig {
-  storage?: StorageConfig;
-  model?: ModelConfig;
+  project: ProjectConfig;
+  storage: StorageConfig;
+  model: ModelConfig;
   retraining?: RetrainingConfig;
-  features?: FeaturesConfig;
   logging?: LoggingConfig;
 }
 
-// ===== Model Metadata =====
+// ========================================
+// INTERNAL TYPES
+// ========================================
 
-export interface ModelMetadata {
-  feature_columns: string[];
-  type_encoder_classes: string[];
-  scaler_mean: number[];
-  scaler_scale: number[];
-  auc_score: number;
-  model_version: string;
+export interface TimeFeatures {
+  hour: number;
+  month: number;
+  dayofweek: number;
+  day: number;
 }
 
-// ===== Internal Feature Vector =====
-
 export interface FeatureVector {
-  step: number;
-  typeEncoded: number;
+  amt: number;
+  hour: number;
+  month: number;
+  dayofweek: number;
+  day: number;
+  entertainment: number;
+  food_dining: number;
+  gas_transport: number;
+  grocery_net: number;
+  grocery_pos: number;
+  health_fitness: number;
+  home: number;
+  kids_pets: number;
+  misc_net: number;
+  misc_pos: number;
+  personal_care: number;
+  shopping_net: number;
+  shopping_pos: number;
+  travel: number;
+}
+
+export interface PredictionResult {
+  score: number;
+  label: number;
+  probabilities: {
+    notFraud: number;
+    fraud: number;
+  };
+}
+
+// ========================================
+// DATABASE TYPES
+// ========================================
+
+export interface PredictionRecord {
+  id: string;
+  transaction_id: string | null;
+  created_at: Date;
   amount: number;
-  oldBalanceOrigin: number;
-  newBalanceOrigin: number;
-  oldBalanceDestination: number;
-  newBalanceDestination: number;
-  originBalanceDiff: number;
-  destinationBalanceDiff: number;
-  originZeroBalance: number;
-  destinationZeroBalance: number;
-  amountToBalanceRatio: number;
+  hour: number;
+  month: number;
+  dayofweek: number;
+  day: number;
+  category: string;
+  score: number;
+  risk_level: string;
+  action: string;
+  model_version: string;
+  actual_fraud: number | null;
+  feedback_provided: boolean;
+  feedback_at: Date | null;
+  feedback_notes: string | null;
+}
+
+export interface ModelVersionRecord {
+  version: string;
+  created_at: Date;
+  is_baseline: boolean;
+  is_active: boolean;
+  training_samples: number | null;
+  training_duration_seconds: number | null;
+  accuracy: number | null;
+  notes: string | null;
+}
+
+// ========================================
+// RETRAINING TYPES
+// ========================================
+
+export interface RetrainOptions {
+  force?: boolean;
+  dryRun?: boolean;
+}
+
+export interface RetrainResult {
+  success: boolean;
+  newVersion?: string;
+  sampleCount?: number;
+  duration?: number;
+  accuracy?: number;
+  error?: string;
+  logs?: string[];
+}
+
+// ========================================
+// UTILITY TYPES
+// ========================================
+
+export interface CategorySuggestion {
+  category: TransactionCategory;
+  description: string;
+  confidence: "high" | "medium" | "low";
+}
+
+export interface DatabaseSize {
+  sizeBytes: number;
+  totalPredictions: number;
+  predictionsWithFeedback: number;
+  totalModelVersions: number;
+}
+
+export interface PredictionStats {
+  total: number;
+  byAction: {
+    accept: number;
+    review: number;
+    reject: number;
+  };
+  byRisk: {
+    low: number;
+    medium: number;
+    high: number;
+  };
+  averageScore: number;
+  feedbackRate: number;
 }

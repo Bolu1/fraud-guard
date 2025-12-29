@@ -1,144 +1,116 @@
 import { nanoid } from 'nanoid';
 import {
   FraudCheckResult,
+  PredictionResult,
   TransactionData,
   RiskLevel,
   Action,
-  ModelConfig,
 } from '../interfaces/types';
-import { PredictionResult } from './manager';
 
 /**
- * Build FraudCheckResult from prediction
+ * Build fraud check result from model prediction
  */
-export class ResultBuilder {
-  private reviewThreshold: number;
-  private rejectThreshold: number;
-  private modelVersion: string;
+export function buildFraudCheckResult(
+  transaction: TransactionData,
+  prediction: PredictionResult,
+  thresholds: { review: number; reject: number },
+  modelVersion: string
+): FraudCheckResult {
+  const checkId = generateCheckId();
+  const risk = determineRiskLevel(prediction.score, thresholds);
+  const action = determineAction(prediction.score, thresholds);
+  const reasons = generateReasons(transaction, prediction, risk, action);
 
-  constructor(modelConfig: ModelConfig, modelVersion: string) {
-    this.reviewThreshold = modelConfig.thresholds?.review || 0.4;
-    this.rejectThreshold = modelConfig.thresholds?.reject || 0.7;
-    this.modelVersion = modelVersion;
+  const result: FraudCheckResult = {
+    id: checkId,
+    transactionId: transaction.id,
+    score: prediction.score,
+    risk: risk,
+    action: action,
+    reasons: reasons,
+    timestamp: new Date(),
+    modelVersion: modelVersion,
+  };
+
+  return result;
+}
+
+/**
+ * Generate unique check ID
+ */
+function generateCheckId(): string {
+  return `check_${nanoid(16)}`;
+}
+
+/**
+ * Determine risk level based on score
+ */
+function determineRiskLevel(score: number, thresholds: { review: number; reject: number }): RiskLevel {
+  if (score >= thresholds.reject) {
+    return RiskLevel.HIGH;
   }
 
-  /**
-   * Build complete fraud check result
-   */
-  build(transaction: TransactionData, prediction: PredictionResult): FraudCheckResult {
-    const checkId = this.generateCheckId();
-    const score = prediction.score;
-    const isFraud = prediction.label === 1;
-    const risk = this.determineRiskLevel(score);
-    const action = this.determineAction(score);
-    const reasons = this.generateReasons(transaction, prediction, risk);
-
-    return {
-      id: checkId,
-      transactionId: transaction.id,
-      score,
-      isFraud,
-      risk,
-      action,
-      reasons,
-      timestamp: new Date(),
-      modelVersion: this.modelVersion,
-    };
+  if (score >= thresholds.review) {
+    return RiskLevel.MEDIUM;
   }
 
-  /**
-   * Generate unique check ID
-   */
-  private generateCheckId(): string {
-    return `check_${nanoid(16)}`;
+  return RiskLevel.LOW;
+}
+
+/**
+ * Determine recommended action based on score
+ */
+function determineAction(score: number, thresholds: { review: number; reject: number }): Action {
+  if (score >= thresholds.reject) {
+    return Action.REJECT;
   }
 
-  /**
-   * Determine risk level based on score
-   */
-  private determineRiskLevel(score: number): RiskLevel {
-    if (score >= this.rejectThreshold) {
-      return RiskLevel.HIGH;
-    } else if (score >= this.reviewThreshold) {
-      return RiskLevel.MEDIUM;
-    } else {
-      return RiskLevel.LOW;
-    }
+  if (score >= thresholds.review) {
+    return Action.REVIEW;
   }
 
-  /**
-   * Determine recommended action based on score
-   */
-  private determineAction(score: number): Action {
-    if (score >= this.rejectThreshold) {
-      return Action.REJECT;
-    } else if (score >= this.reviewThreshold) {
-      return Action.REVIEW;
-    } else {
-      return Action.ACCEPT;
-    }
+  return Action.ACCEPT;
+}
+
+/**
+ * Generate human-readable reasons for the decision
+ */
+function generateReasons(
+  transaction: TransactionData,
+  prediction: PredictionResult,
+  risk: RiskLevel,
+  action: Action
+): string[] {
+  const reasons: string[] = [];
+
+  if (risk === RiskLevel.HIGH) {
+    reasons.push(`High fraud probability: ${(prediction.score * 100).toFixed(1)}%`);
+  } else if (risk === RiskLevel.MEDIUM) {
+    reasons.push(`Medium fraud probability: ${(prediction.score * 100).toFixed(1)}%`);
+  } else {
+    reasons.push(`Low fraud probability: ${(prediction.score * 100).toFixed(1)}%`);
   }
 
-  /**
-   * Generate human-readable reasons for the decision
-   */
-  private generateReasons(
-    transaction: TransactionData,
-    prediction: PredictionResult,
-    risk: RiskLevel
-  ): string[] {
-    const reasons: string[] = [];
-
-    // Primary reason based on fraud score
-    if (risk === RiskLevel.HIGH) {
-      reasons.push(`High fraud probability: ${(prediction.score * 100).toFixed(1)}%`);
-    } else if (risk === RiskLevel.MEDIUM) {
-      reasons.push(`Moderate fraud probability: ${(prediction.score * 100).toFixed(1)}%`);
-    } else {
-      reasons.push(`Low fraud probability: ${(prediction.score * 100).toFixed(1)}%`);
-    }
-
-    // Transaction type context
-    reasons.push(`Transaction type: ${transaction.type}`);
-
-    // Balance-based reasons
-    const originBalanceDiff = transaction.oldBalanceOrigin - transaction.newBalanceOrigin;
-    if (transaction.oldBalanceOrigin > 0 && originBalanceDiff === transaction.amount) {
-      reasons.push('Exact balance deduction matches amount');
-    }
-
-    if (transaction.oldBalanceOrigin === 0) {
-      reasons.push('Origin account has zero balance');
-    }
-
-    if (transaction.oldBalanceDestination === 0 && transaction.newBalanceDestination === 0) {
-      reasons.push('Destination account remains at zero balance');
-    }
-
-    // Amount to balance ratio
-    const ratio = transaction.amount / (transaction.oldBalanceOrigin + 1);
-    if (ratio > 0.9 && transaction.oldBalanceOrigin > 0) {
-      reasons.push('Transaction amount is majority of origin balance');
-    }
-
-    return reasons;
+  if (transaction.amount >= 1000) {
+    reasons.push('High transaction amount');
   }
 
-  /**
-   * Update thresholds dynamically
-   */
-  updateThresholds(review: number, reject: number): void {
-    this.reviewThreshold = review;
-    this.rejectThreshold = reject;
+  const hour = transaction.timestamp.getHours();
+  if (hour >= 0 && hour <= 5) {
+    reasons.push('Unusual transaction time (late night/early morning)');
   }
 
-  /**
-   * Get current thresholds
-   */
-  getThresholds(): { review: number; reject: number } {
-    return {
-      review: this.reviewThreshold,
-      reject: this.rejectThreshold,
-    };
+  if (transaction.category === 'travel' || transaction.category === 'misc_net') {
+    reasons.push('Transaction category has elevated fraud risk');
   }
+
+  if (action === Action.REJECT) {
+    reasons.push('Recommendation: Block transaction and notify customer');
+  } else if (action === Action.REVIEW) {
+    reasons.push('Recommendation: Manual review required');
+  } else {
+    reasons.push('Recommendation: Approve transaction');
+  }
+
+  return reasons;
 }

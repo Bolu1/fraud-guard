@@ -1,28 +1,41 @@
+/**
+ * Fraud Guard - Main Entry Point
+ * Exports all public APIs, types, and utilities
+ */
+
 // Main class
-export { FraudGuard } from './core/fraud-guard';
+export { FraudGuard } from "./core/fraud-guard";
 
 // Interface
-export type { IFraudGuard } from './interfaces/fraud-guard.interface';
+export { IFraudGuard } from "./interfaces/fraud-guard.interface";
 
-
-// Types
-export type {
+// Core types
+export {
   TransactionData,
   FraudCheckResult,
+  FeedbackData,
+  ModelInfo,
   FraudGuardConfig,
-  ModelMetadata,
-  FeatureVector,
+} from "./interfaces/types";
+
+// Enums
+export {
+  TransactionCategory,
+  RiskLevel,
+  Action,
+  LogLevel,
+} from "./interfaces/types";
+
+// Configuration types (for advanced users)
+export {
+  ProjectConfig,
   StorageConfig,
   ModelConfig,
   RetrainingConfig,
-  FeaturesConfig,
   LoggingConfig,
-} from './interfaces/types';
+} from "./interfaces/types";
 
-// Enums
-export { TransactionType, RiskLevel, Action, LogLevel } from './interfaces/types';
-
-// Errors (users might want to catch specific errors)
+// Error classes
 export {
   FraudGuardError,
   ConfigurationError,
@@ -31,4 +44,13 @@ export {
   StorageError,
   InitializationError,
   RetrainingError,
-} from './utils/errors';
+} from "./utils/errors";
+
+// Utility functions (for advanced use cases)
+export {
+  autoMapCategory,
+  getCategoryDescription,
+  CATEGORY_GUIDE,
+} from "./utils/category-mapper";
+
+export { extractTimeFeatures, formatTimeFeatures } from "./utils/time-features";
