@@ -44,8 +44,8 @@ export class PredictionService {
       await initializeBaselineModel();
       this.logger.debug('Baseline model ready');
 
-      const resolvedModelPath = resolveModelPath(this.projectName, this.modelPath);
-      this.logger.debug(`Model path: ${resolvedModelPath}`);
+      const resolvedModelPath = resolveModelPath(this.projectName, this.modelPath, this.logger);
+      this.logger.info(`Model path: ${resolvedModelPath}`);
 
       this.modelManager = new ModelManager(resolvedModelPath, this.logger);
       await this.modelManager.initialize();

@@ -79,8 +79,6 @@ export interface FraudCheckResult {
 
 export interface FeedbackData {
   actualFraud: boolean;
-  notes?: string;
-  discoveredAt?: Date;
 }
 
 // ========================================
@@ -119,6 +117,7 @@ export interface ProjectConfig {
 }
 
 export interface StorageConfig {
+  enabled?: boolean;
   path?: string;
   retention?: {
     predictions_days?: number;

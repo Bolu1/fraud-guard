@@ -163,3 +163,15 @@ export function validateThreshold(value: any, name: string): void {
     throw new ValidationError(`${name} must be between 0 and 1, got ${value}`);
   }
 }
+
+export function validateTransactionForStorage(transaction: TransactionData): void {
+  validateTransaction(transaction);
+
+  if (!transaction.id) {
+    throw new ValidationError('Transaction ID is required when storage is enabled');
+  }
+
+  if (!transaction.customerId) {
+    throw new ValidationError('Customer ID is required when storage is enabled');
+  }
+}

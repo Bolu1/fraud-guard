@@ -31,6 +31,7 @@ export function loadConfig(): FraudGuardConfig {
     }
 
     const mergedConfig = mergeConfigs(userConfig);
+    console.log(mergedConfig, " skndnsdsjdsdj");
     const configWithPaths = resolvePaths(mergedConfig);
     validateConfig(configWithPaths);
 
@@ -58,10 +59,11 @@ function createDefaultConfig(): FraudGuardConfig {
       name: defaultProjectName,
     },
     storage: {
+      enabled: false,
       path: getDefaultStoragePath(defaultProjectName),
       retention: {
         predictions_days: DEFAULT_CONFIG.storage?.retention?.predictions_days || 90,
-      }, 
+      },
     },
     model: {
       path: undefined,
@@ -120,6 +122,7 @@ function mergeConfigs(userConfig: Partial<FraudGuardConfig>): FraudGuardConfig {
       name: userConfig.project?.name,
     },
     storage: {
+      enabled: userConfig.storage?.enabled ?? DEFAULT_CONFIG.storage?.enabled,
       path: userConfig.storage?.path,
       retention: {
         predictions_days:
@@ -131,24 +134,17 @@ function mergeConfigs(userConfig: Partial<FraudGuardConfig>): FraudGuardConfig {
       path: userConfig.model?.path,
       thresholds: {
         review:
-          userConfig.model?.thresholds?.review ||
-          DEFAULT_CONFIG.model?.thresholds?.review,
+          userConfig.model?.thresholds?.review || DEFAULT_CONFIG.model?.thresholds?.review,
         reject:
-          userConfig.model?.thresholds?.reject ||
-          DEFAULT_CONFIG.model?.thresholds?.reject,
+          userConfig.model?.thresholds?.reject || DEFAULT_CONFIG.model?.thresholds?.reject,
       },
     },
     retraining: {
-      enabled:
-        userConfig.retraining?.enabled ?? DEFAULT_CONFIG.retraining?.enabled,
-      python_path:
-        userConfig.retraining?.python_path ||
-        DEFAULT_CONFIG.retraining?.python_path,
+      enabled: userConfig.retraining?.enabled ?? DEFAULT_CONFIG.retraining?.enabled,
+      python_path: userConfig.retraining?.python_path || DEFAULT_CONFIG.retraining?.python_path,
       min_samples:
-        userConfig.retraining?.min_samples ||
-        DEFAULT_CONFIG.retraining?.min_samples,
-      schedule:
-        userConfig.retraining?.schedule || DEFAULT_CONFIG.retraining?.schedule,
+        userConfig.retraining?.min_samples || DEFAULT_CONFIG.retraining?.min_samples,
+      schedule: userConfig.retraining?.schedule || DEFAULT_CONFIG.retraining?.schedule,
     },
     logging: {
       level: userConfig.logging?.level || DEFAULT_CONFIG.logging?.level,
@@ -164,10 +160,6 @@ function resolvePaths(config: FraudGuardConfig): FraudGuardConfig {
 
   if (!config.storage.path) {
     config.storage.path = getDefaultStoragePath(projectName);
-  }
-
-  if (!config.model.path) {
-    config.model.path = getDefaultModelPath(projectName);
   }
 
   return config;

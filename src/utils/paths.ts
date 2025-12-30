@@ -1,42 +1,82 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
-import { InitializationError } from './errors';
-import { getBaselineModelPath, getProjectBasePath } from '../config/defaults';
+import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
+import { InitializationError } from "./errors";
+import { getBaselineModelPath, getProjectBasePath } from "../config/defaults";
+import { Logger } from "./logger";
 
-export function resolveStoragePath(projectName: string, configPath?: string): string {
+export function resolveStoragePath(
+  projectName: string,
+  configPath?: string
+): string {
   if (configPath) {
     return configPath;
   }
 
-  if (process.env.FRAUD_GUARD_DATA_PATH) {
-    return process.env.FRAUD_GUARD_DATA_PATH;
-  }
-
-  return path.join(getProjectBasePath(projectName), 'data', 'fraud-data.db');
+  return path.join(getProjectBasePath(projectName), "data", "fraud-data.db");
 }
 
-export function resolveModelPath(projectName: string, configPath?: string): string {
+export function resolveModelPath(
+  projectName: string,
+  configPath?: string,
+  log?: Logger
+): string {
+
+  // 1. User override in config (highest priority)
   if (configPath) {
     return configPath;
   }
 
-  if (process.env.FRAUD_GUARD_MODEL_PATH) {
-    return process.env.FRAUD_GUARD_MODEL_PATH;
-  }
+  // 3. Check for retrained model in project directory
+  const projectModelPath = path.join(getProjectBasePath(projectName), "models");
+  const currentModelLink = path.join(projectModelPath, "current");
 
-  const projectModelPath = path.join(getProjectBasePath(projectName), 'models');
-  const currentModelLink = path.join(projectModelPath, 'current');
+  log?.info(".        ");
+  log?.info(`projectModelPath ${projectModelPath} projectModelPath`);
+  log?.info(".        ");
 
+  log?.info(".        ");
+  log?.info(`currentModelLink ${currentModelLink} currentModelLink`);
+  log?.info(".        ");
+
+  // Check if retrained model exists and is valid
   if (fs.existsSync(currentModelLink)) {
-    return currentModelLink;
+    const modelJsonPath = path.join(currentModelLink, "model.json");
+    const scalerParamsPath = path.join(currentModelLink, "scaler_params.json");
+      log?.info("11111   ");
+
+
+    if (fs.existsSync(modelJsonPath) && fs.existsSync(scalerParamsPath)) {
+      log?.info("2222   ");
+
+      return currentModelLink;
+    }
   }
 
+  // Also check for direct model in project directory (no symlink)
+  const directModelJsonPath = path.join(projectModelPath, "model.json");
+  const directScalerPath = path.join(projectModelPath, "scaler_params.json");
+
+    log?.info(".        ");
+  log?.info(`directModelJsonPath ${directModelJsonPath} directModelJsonPath`);
+  log?.info(".        ");
+
+  log?.info(".        ");
+  log?.info(`directScalerPath ${directScalerPath} directScalerPath`);
+  log?.info(".        ");
+
+  if (fs.existsSync(directModelJsonPath) && fs.existsSync(directScalerPath)) {
+      log?.info("3333   ");
+
+    return projectModelPath;
+  }
+
+  // 4. Fall back to baseline model
   return getBaselineModelPath();
 }
 
 export function resolveModelFile(modelDir: string): string {
-  const modelFile = path.join(modelDir, 'model.json');
+  const modelFile = path.join(modelDir, "model.json");
 
   if (!fs.existsSync(modelFile)) {
     throw new InitializationError(`Model file not found: ${modelFile}`);
@@ -46,17 +86,19 @@ export function resolveModelFile(modelDir: string): string {
 }
 
 export function resolveScalerFile(modelDir: string): string {
-  const scalerFile = path.join(modelDir, 'scaler_params.json');
+  const scalerFile = path.join(modelDir, "scaler_params.json");
 
   if (!fs.existsSync(scalerFile)) {
-    throw new InitializationError(`Scaler parameters file not found: ${scalerFile}`);
+    throw new InitializationError(
+      `Scaler parameters file not found: ${scalerFile}`
+    );
   }
 
   return scalerFile;
 }
 
 export function resolveModelConfigFile(modelDir: string): string {
-  const configFile = path.join(modelDir, 'model_config.json');
+  const configFile = path.join(modelDir, "model_config.json");
 
   if (!fs.existsSync(configFile)) {
     throw new InitializationError(`Model config file not found: ${configFile}`);
@@ -69,7 +111,9 @@ export async function ensureDirectoryExists(dirPath: string): Promise<void> {
   try {
     await fs.promises.mkdir(dirPath, { recursive: true });
   } catch (error: any) {
-    throw new InitializationError(`Failed to create directory ${dirPath}: ${error.message}`);
+    throw new InitializationError(
+      `Failed to create directory ${dirPath}: ${error.message}`
+    );
   }
 }
 
@@ -97,7 +141,10 @@ export function fileExists(filePath: string): boolean {
   }
 }
 
-export async function copyFile(source: string, destination: string): Promise<void> {
+export async function copyFile(
+  source: string,
+  destination: string
+): Promise<void> {
   try {
     const destDir = path.dirname(destination);
     await ensureDirectoryExists(destDir);
@@ -110,7 +157,10 @@ export async function copyFile(source: string, destination: string): Promise<voi
   }
 }
 
-export async function copyDirectory(source: string, destination: string): Promise<void> {
+export async function copyDirectory(
+  source: string,
+  destination: string
+): Promise<void> {
   try {
     await ensureDirectoryExists(destination);
 
@@ -136,23 +186,27 @@ export async function copyDirectory(source: string, destination: string): Promis
 export async function initializeBaselineModel(): Promise<void> {
   const baselinePath = getBaselineModelPath();
 
-  if (fs.existsSync(path.join(baselinePath, 'model.json'))) {
+  if (fs.existsSync(path.join(baselinePath, "model.json"))) {
     return;
   }
 
   try {
-    const packageModelPath = path.join(__dirname, '../../models/baseline');
+    const packageModelPath = path.join(__dirname, "../../models/baseline");
 
     if (!fs.existsSync(packageModelPath)) {
-      throw new InitializationError(`Package baseline model not found at ${packageModelPath}`);
+      throw new InitializationError(
+        `Package baseline model not found at ${packageModelPath}`
+      );
     }
 
     await copyDirectory(packageModelPath, baselinePath);
   } catch (error: any) {
-    throw new InitializationError(`Failed to initialize baseline model: ${error.message}`);
+    throw new InitializationError(
+      `Failed to initialize baseline model: ${error.message}`
+    );
   }
 }
 
 export function getFraudGuardBaseDir(): string {
-  return path.join(os.homedir(), '.fraud-guard');
+  return path.join(os.homedir(), ".fraud-guard");
 }

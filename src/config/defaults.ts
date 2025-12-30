@@ -30,17 +30,16 @@ export function getProjectBasePath(projectName: string): string {
  * User MUST provide this in config file
  */
 export const DEFAULT_CONFIG: Partial<FraudGuardConfig> = {
-  // project.name is REQUIRED - no default
-
   storage: {
-    path: undefined, // Will be derived from project.name
+    enabled: false,
+    path: undefined,
     retention: {
       predictions_days: 90,
     },
   },
 
   model: {
-    path: undefined, // Will be derived from project.name
+    path: undefined,
     thresholds: {
       review: 0.4,
       reject: 0.7,
@@ -51,7 +50,7 @@ export const DEFAULT_CONFIG: Partial<FraudGuardConfig> = {
     enabled: false,
     python_path: 'python3',
     min_samples: 100,
-    schedule: '0 2 * * *', // 2 AM daily
+    schedule: '0 2 * * *',
   },
 
   logging: {

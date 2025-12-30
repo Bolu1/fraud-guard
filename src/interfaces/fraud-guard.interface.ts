@@ -1,4 +1,9 @@
-import { TransactionData, FraudCheckResult, FraudGuardConfig, ModelInfo } from './types';
+import {
+  TransactionData,
+  FraudCheckResult,
+  FraudGuardConfig,
+  ModelInfo,
+} from "./types";
 
 /**
  * Fraud Guard interface
@@ -11,6 +16,10 @@ export interface IFraudGuard {
    * @returns Fraud check result with score and recommendation
    */
   check(transaction: TransactionData): Promise<FraudCheckResult>;
+
+  /** Get feedback for predictions
+   */
+  feedback(transactionId: string, actualFraud: boolean): Promise<void>;
 
   /**
    * Get current configuration
