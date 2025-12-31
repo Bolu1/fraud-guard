@@ -3,6 +3,7 @@ import {
   FraudCheckResult,
   FraudGuardConfig,
   ModelInfo,
+  CustomerTransactionFeedbackStatus,
 } from "./types";
 
 /**
@@ -19,7 +20,12 @@ export interface IFraudGuard {
 
   /** Get feedback for predictions
    */
-  feedback(transactionId: string, actualFraud: boolean): Promise<void>;
+  feedback(transactionId: string, actualFraud: boolean, transactionStatus: CustomerTransactionFeedbackStatus): Promise<void>;
+  
+
+  /** Run model retrain 
+   */
+  retrain(): Promise<any>;
 
   /**
    * Get current configuration

@@ -24,6 +24,8 @@ export {
   RiskLevel,
   Action,
   LogLevel,
+  CustomerTransactionFeedbackStatus,
+  VelocityCheckType
 } from "./interfaces/types";
 
 // Configuration types (for advanced users)

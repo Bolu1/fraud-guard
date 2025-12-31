@@ -21,7 +21,11 @@ CREATE TABLE IF NOT EXISTS predictions (
   actual_fraud INTEGER,
   feedback_provided INTEGER DEFAULT 0,
   feedback_at DATETIME,
-  feedback_notes TEXT
+  feedback_notes TEXT,
+  transaction_status TEXT,
+
+  device_id TEXT,
+  ip_address TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_transaction_id ON predictions(transaction_id);
@@ -29,6 +33,10 @@ CREATE INDEX IF NOT EXISTS idx_customer_id ON predictions(customer_id);
 CREATE INDEX IF NOT EXISTS idx_created_at ON predictions(created_at);
 CREATE INDEX IF NOT EXISTS idx_feedback_provided ON predictions(feedback_provided);
 CREATE INDEX IF NOT EXISTS idx_model_version ON predictions(model_version);
+CREATE INDEX IF NOT EXISTS idx_customer_created ON predictions(customer_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_device_created ON predictions(device_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_ip_created ON predictions(ip_address, created_at);
+CREATE INDEX IF NOT EXISTS idx_status ON predictions(transaction_status);
 
 -- Model versions table
 CREATE TABLE IF NOT EXISTS model_versions (

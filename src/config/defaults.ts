@@ -30,6 +30,11 @@ export function getProjectBasePath(projectName: string): string {
  * User MUST provide this in config file
  */
 export const DEFAULT_CONFIG: Partial<FraudGuardConfig> = {
+  thresholds: {
+    review: 0.4,
+    reject: 0.7,
+  },
+
   storage: {
     enabled: false,
     path: undefined,
@@ -40,15 +45,48 @@ export const DEFAULT_CONFIG: Partial<FraudGuardConfig> = {
 
   model: {
     path: undefined,
-    thresholds: {
-      review: 0.4,
-      reject: 0.7,
+  },
+
+  velocity: {
+    enabled: false,
+    scoring: {
+      model_weight: 0.6,
+      velocity_weight: 0.4,
+    },
+    frequency: {
+      enabled: true,
+      time_windows: [
+        { period_minutes: 10, max_transactions: 5, score_adjustment: 0.2 },
+        { period_minutes: 60, max_transactions: 10, score_adjustment: 0.3 },
+        { period_minutes: 1440, max_transactions: 50, score_adjustment: 0.4 },
+      ],
+    },
+    amount: {
+      enabled: true,
+      time_windows: [
+        { period_minutes: 60, max_amount: 5000, score_adjustment: 0.2 },
+        { period_minutes: 1440, max_amount: 10000, score_adjustment: 0.3 },
+      ],
+      spike_detection: {
+        enabled: true,
+        lookback_days: 30,
+        multiplier: 5,
+        score_adjustment: 0.4,
+      },
+    },
+    failed_transactions: {
+      enabled: true,
+      time_windows: [
+        { period_minutes: 10, max_failed: 3, score_adjustment: 0.3 },
+        { period_minutes: 60, max_failed: 5, score_adjustment: 0.4 },
+      ],
     },
   },
 
   retraining: {
     enabled: false,
     python_path: 'python3',
+    python_venv: "bin/python",
     min_samples: 100,
     schedule: '0 2 * * *',
   },

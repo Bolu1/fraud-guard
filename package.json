@@ -62,13 +62,10 @@
   },
   "homepage": "https://github.com/bolu1/fraud-guard#readme",
   "dependencies": {
-    "@tensorflow/tfjs-node": "^4.22.0",
     "better-sqlite3": "^12.5.0",
     "commander": "^14.0.2",
     "js-yaml": "^4.1.1",
-    "nanoid": "^5.1.6",
-    "sqlite": "^5.1.1",
-    "sqlite3": "^5.1.7"
+    "nanoid": "^5.1.6"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

@@ -43,6 +43,17 @@ export enum LogLevel {
   ERROR = "error",
 }
 
+export enum CustomerTransactionFeedbackStatus {
+  SUCCESS = "success",
+  FAILED = "failed",
+}
+
+export enum VelocityCheckType {
+  FREQUENCY = "frequency",
+  AMOUNT = "amount",
+  FAILED = "failed",
+}
+
 // ========================================
 // TRANSACTION INPUT
 // ========================================
@@ -65,11 +76,15 @@ export interface TransactionData {
 export interface FraudCheckResult {
   id: string;
   transactionId?: string;
+  timestamp: Date;
+
+  modelScore: number;
+  velocityScore: number;
   score: number;
+
   risk: RiskLevel;
   action: Action;
   reasons: string[];
-  timestamp: Date;
   modelVersion: string;
 }
 
@@ -126,15 +141,17 @@ export interface StorageConfig {
 
 export interface ModelConfig {
   path?: string;
-  thresholds?: {
-    review?: number;
-    reject?: number;
-  };
+}
+
+export interface ThresholdsConfig {
+  review: number;
+  reject: number;
 }
 
 export interface RetrainingConfig {
   enabled?: boolean;
   python_path?: string;
+  python_venv?: string;
   min_samples?: number;
   schedule?: string;
 }
@@ -144,12 +161,74 @@ export interface LoggingConfig {
   console?: boolean;
 }
 
+export interface TimeWindowConfig {
+  period_minutes: number;
+  max_transactions?: number;
+  max_failed?: number;
+  max_amount?: number;
+  score_adjustment: number;
+}
+
+export interface AmountConfig {
+  enabled?: boolean;
+  time_windows?: TimeWindowConfig[];
+  spike_detection?: {
+    enabled?: boolean;
+    lookback_days?: number;
+    multiplier?: number;
+    score_adjustment?: number;
+  };
+}
+
+// Spike detection configuration
+export interface SpikeDetectionConfig {
+  enabled?: boolean;
+  lookback_days?: number;
+  multiplier?: number;
+  score_adjustment?: number;
+}
+
+// Frequency check configuration
+export interface FrequencyConfig {
+  enabled?: boolean;
+  time_windows?: TimeWindowConfig[];
+}
+
+// Amount check configuration
+export interface AmountConfig {
+  enabled?: boolean;
+  time_windows?: TimeWindowConfig[];
+  spike_detection?: SpikeDetectionConfig;
+}
+
+// Failed transaction check configuration
+export interface FailedTransactionsConfig {
+  enabled?: boolean;
+  time_windows?: TimeWindowConfig[];
+}
+
+// Velocity scoring configuration
+export interface VelocityScoringConfig {
+  model_weight?: number;
+  velocity_weight?: number;
+}
+
+export interface VelocityConfig {
+  enabled?: boolean;
+  scoring?: VelocityScoringConfig;
+  frequency?: FrequencyConfig;
+  amount?: AmountConfig;
+  failed_transactions?: FailedTransactionsConfig;
+}
+
 export interface FraudGuardConfig {
   project: ProjectConfig;
+  thresholds: ThresholdsConfig;
   storage: StorageConfig;
   model: ModelConfig;
-  retraining?: RetrainingConfig;
+  velocity?: VelocityConfig;
   logging?: LoggingConfig;
+  retraining?: RetrainingConfig;
 }
 
 // ========================================
@@ -279,4 +358,46 @@ export interface PredictionStats {
   };
   averageScore: number;
   feedbackRate: number;
+}
+
+// ========================================
+// VELOCITY CHECKS TYPES
+// ========================================
+
+export interface VelocityCheckResult {
+  type: VelocityCheckType;
+  score: number;
+  triggered: boolean;
+  reasons: string[];
+  details?: any;
+}
+
+// Final velocity result after aggregation
+export interface VelocityResult {
+  score: number;
+  reasons: string[];
+  checks: VelocityCheckResult[];
+}
+
+// ========================================
+// RETRAINING TYPES
+// ========================================
+
+export interface RetrainingResult {
+  success: boolean;
+  version?: string;
+  metrics?: {
+    accuracy: number;
+    precision: number;
+    recall: number;
+    f1: number;
+    auc: number;
+    training_samples: number;
+    test_samples: number;
+  };
+  output_dir?: string;
+  error?: string;
+  improvement?: number;
+  current_accuracy?: number;
+  new_accuracy?: number;
 }

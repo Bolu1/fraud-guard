@@ -21,34 +21,21 @@ export function resolveModelPath(
   configPath?: string,
   log?: Logger
 ): string {
-
   // 1. User override in config (highest priority)
   if (configPath) {
     return configPath;
   }
 
-  // 3. Check for retrained model in project directory
+  // 2. Check for retrained model in project directory
   const projectModelPath = path.join(getProjectBasePath(projectName), "models");
   const currentModelLink = path.join(projectModelPath, "current");
-
-  log?.info(".        ");
-  log?.info(`projectModelPath ${projectModelPath} projectModelPath`);
-  log?.info(".        ");
-
-  log?.info(".        ");
-  log?.info(`currentModelLink ${currentModelLink} currentModelLink`);
-  log?.info(".        ");
 
   // Check if retrained model exists and is valid
   if (fs.existsSync(currentModelLink)) {
     const modelJsonPath = path.join(currentModelLink, "model.json");
     const scalerParamsPath = path.join(currentModelLink, "scaler_params.json");
-      log?.info("11111   ");
-
 
     if (fs.existsSync(modelJsonPath) && fs.existsSync(scalerParamsPath)) {
-      log?.info("2222   ");
-
       return currentModelLink;
     }
   }
@@ -57,21 +44,11 @@ export function resolveModelPath(
   const directModelJsonPath = path.join(projectModelPath, "model.json");
   const directScalerPath = path.join(projectModelPath, "scaler_params.json");
 
-    log?.info(".        ");
-  log?.info(`directModelJsonPath ${directModelJsonPath} directModelJsonPath`);
-  log?.info(".        ");
-
-  log?.info(".        ");
-  log?.info(`directScalerPath ${directScalerPath} directScalerPath`);
-  log?.info(".        ");
-
   if (fs.existsSync(directModelJsonPath) && fs.existsSync(directScalerPath)) {
-      log?.info("3333   ");
-
     return projectModelPath;
   }
 
-  // 4. Fall back to baseline model
+  // 3. Fall back to baseline model
   return getBaselineModelPath();
 }
 

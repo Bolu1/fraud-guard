@@ -58,6 +58,10 @@ function createDefaultConfig(): FraudGuardConfig {
     project: {
       name: defaultProjectName,
     },
+    thresholds: {
+      review: DEFAULT_CONFIG.thresholds?.review || 0.4,
+      reject: DEFAULT_CONFIG.thresholds?.reject || 0.7,
+    },
     storage: {
       enabled: false,
       path: getDefaultStoragePath(defaultProjectName),
@@ -67,14 +71,18 @@ function createDefaultConfig(): FraudGuardConfig {
     },
     model: {
       path: undefined,
-      thresholds: {
-        review: DEFAULT_CONFIG.model?.thresholds?.review || 0.4,
-        reject: DEFAULT_CONFIG.model?.thresholds?.reject || 0.7,
-      },
+    },
+    velocity: {
+      enabled: false,
+      scoring: DEFAULT_CONFIG.velocity?.scoring,
+      frequency: DEFAULT_CONFIG.velocity?.frequency,
+      amount: DEFAULT_CONFIG.velocity?.amount,
+      failed_transactions: DEFAULT_CONFIG.velocity?.failed_transactions,
     },
     retraining: {
       enabled: DEFAULT_CONFIG.retraining?.enabled || false,
       python_path: DEFAULT_CONFIG.retraining?.python_path || 'python3',
+      python_venv: DEFAULT_CONFIG.retraining?.python_venv || 'bin/python',
       min_samples: DEFAULT_CONFIG.retraining?.min_samples || 100,
       schedule: DEFAULT_CONFIG.retraining?.schedule || '0 2 * * *',
     },
@@ -121,6 +129,10 @@ function mergeConfigs(userConfig: Partial<FraudGuardConfig>): FraudGuardConfig {
     project: {
       name: userConfig.project?.name,
     },
+    thresholds: {
+      review: userConfig.thresholds?.review || DEFAULT_CONFIG.thresholds?.review,
+      reject: userConfig.thresholds?.reject || DEFAULT_CONFIG.thresholds?.reject,
+    },
     storage: {
       enabled: userConfig.storage?.enabled ?? DEFAULT_CONFIG.storage?.enabled,
       path: userConfig.storage?.path,
@@ -132,16 +144,27 @@ function mergeConfigs(userConfig: Partial<FraudGuardConfig>): FraudGuardConfig {
     },
     model: {
       path: userConfig.model?.path,
-      thresholds: {
-        review:
-          userConfig.model?.thresholds?.review || DEFAULT_CONFIG.model?.thresholds?.review,
-        reject:
-          userConfig.model?.thresholds?.reject || DEFAULT_CONFIG.model?.thresholds?.reject,
+    },
+    velocity: {
+      enabled: userConfig.velocity?.enabled ?? DEFAULT_CONFIG.velocity?.enabled,
+      scoring: {
+        model_weight:
+          userConfig.velocity?.scoring?.model_weight ||
+          DEFAULT_CONFIG.velocity?.scoring?.model_weight,
+        velocity_weight:
+          userConfig.velocity?.scoring?.velocity_weight ||
+          DEFAULT_CONFIG.velocity?.scoring?.velocity_weight,
       },
+      frequency: userConfig.velocity?.frequency || DEFAULT_CONFIG.velocity?.frequency,
+      amount: userConfig.velocity?.amount || DEFAULT_CONFIG.velocity?.amount,
+      failed_transactions:
+        userConfig.velocity?.failed_transactions ||
+        DEFAULT_CONFIG.velocity?.failed_transactions,
     },
     retraining: {
       enabled: userConfig.retraining?.enabled ?? DEFAULT_CONFIG.retraining?.enabled,
       python_path: userConfig.retraining?.python_path || DEFAULT_CONFIG.retraining?.python_path,
+      python_venv: userConfig.retraining?.python_venv || DEFAULT_CONFIG.retraining?.python_venv,
       min_samples:
         userConfig.retraining?.min_samples || DEFAULT_CONFIG.retraining?.min_samples,
       schedule: userConfig.retraining?.schedule || DEFAULT_CONFIG.retraining?.schedule,

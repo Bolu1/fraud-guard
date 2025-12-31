@@ -178,3 +178,50 @@ CREATE TABLE predictions (
   feedback_provided BOOLEAN DEFAULT 0,      -- Has user provided feedback?
   feedback_at DATETIME,                     -- When feedback was provided
   feedback_notes TEXT,                      -- Optional
+
+  🎯 Recommended Implementation for Fraud Guard
+Phase 1 (High Priority - Implement First): ⭐⭐⭐
+
+✅ Transaction Frequency per Customer
+
+Count in last: 10 min, 1 hour, 24 hours
+Thresholds: 5/10min, 10/1hour, 50/24hours
+
+
+✅ Transaction Amount Velocity per Customer
+
+Sum in last: 1 hour, 24 hours, 7 days
+Check deviation from average
+
+
+✅ Failed Transaction Velocity
+
+Track failed attempts
+Alert on: 3+ failures then success
+
+
+✅ Geographic Velocity (using IP → geolocation)
+
+Detect impossible travel
+Track location changes
+
+
+✅ Device Velocity
+
+Multiple customers on same device
+New device for existing customer
+
+
+
+
+Phase 2 (Medium Priority): ⭐⭐
+
+✅ IP Address Velocity
+
+Multiple customers per IP
+Proxy/VPN detection
+
+
+✅ Wallet Draining Patterns
+
+Already partially implemented

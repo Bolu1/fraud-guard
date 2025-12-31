@@ -18,6 +18,11 @@ export function validateConfig(config: FraudGuardConfig): void {
     validateStorageConfig(config.storage);
   }
 
+  // Validate threshold
+  if (config.thresholds) {
+    validateThresholdConfig(config.thresholds)
+  }
+
   // Validate model
   if (config.model) {
     validateModelConfig(config.model);
@@ -91,9 +96,14 @@ function validateModelConfig(modelConfig: NonNullable<FraudGuardConfig['model']>
   if (modelConfig.path !== undefined && typeof modelConfig.path !== 'string') {
     throw new ConfigurationError('model.path must be a string');
   }
+}
 
-  if (modelConfig.thresholds) {
-    const { review, reject } = modelConfig.thresholds;
+/**
+ * Validate threshold configuration
+ */
+function validateThresholdConfig(thresholds: NonNullable<FraudGuardConfig['thresholds']>): void {
+  if (thresholds) {
+    const { review, reject } = thresholds;
 
     // Validate review threshold
     if (review !== undefined) {

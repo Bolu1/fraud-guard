@@ -1,9 +1,11 @@
 import * as sqlite3 from "sqlite3";
+import * as cron from "node-cron";
 import { open, Database } from "sqlite";
 import {
   PredictionRecord,
   FraudCheckResult,
   TransactionData,
+  CustomerTransactionFeedbackStatus,
 } from "../interfaces/types";
 import { SCHEMA } from "./schema";
 import { StorageError } from "../utils/errors";
@@ -16,9 +18,12 @@ export class StorageManager {
   private dbPath: string;
   private logger: Logger;
   private initialized: boolean = false;
+  private retentionDays: number;
+  private cleanupJob: cron.ScheduledTask | null = null;
 
-  constructor(dbPath: string, logger: Logger) {
+  constructor(dbPath: string, retentionDays: number, logger: Logger) {
     this.dbPath = dbPath;
+    this.retentionDays = retentionDays;
     this.logger = logger;
   }
 
@@ -72,9 +77,10 @@ export class StorageManager {
         `INSERT INTO predictions (
           id, transaction_id, customer_id, created_at,
           amt, hour, month, dayofweek, day, category,
+          device_id, ip_address,
           score, risk_level, action, model_version,
-          actual_fraud, feedback_provided, feedback_at, feedback_notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          actual_fraud, feedback_provided, feedback_at, transaction_status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           result.id,
           transaction.id,
@@ -86,6 +92,8 @@ export class StorageManager {
           timeFeatures.dayofweek,
           timeFeatures.day,
           transaction.category,
+          transaction.deviceId || null,
+          transaction.ipAddress || null,
           result.score,
           result.risk,
           result.action,
@@ -105,7 +113,8 @@ export class StorageManager {
 
   async updateFeedback(
     transactionId: string,
-    actualFraud: boolean
+    actualFraud: boolean,
+    transactionStatus?: CustomerTransactionFeedbackStatus
   ): Promise<void> {
     if (!this.db) {
       throw new StorageError("Storage not initialized");
@@ -118,9 +127,15 @@ export class StorageManager {
         `UPDATE predictions 
          SET actual_fraud = ?, 
              feedback_provided = 1, 
-             feedback_at = ?
+             feedback_at = ?,
+             transaction_status = ?
          WHERE transaction_id = ?`,
-        [actualFraud ? 1 : 0, feedbackAt, transactionId]
+        [
+          actualFraud ? 1 : 0,
+          feedbackAt,
+          transactionStatus || null,
+          transactionId,
+        ]
       );
 
       if (result.changes === 0) {
@@ -130,6 +145,9 @@ export class StorageManager {
       }
 
       this.logger.debug(`Feedback updated for transaction: ${transactionId}`);
+      if (transactionStatus) {
+        this.logger.debug(`Transaction status set to: ${transactionStatus}`);
+      }
     } catch (error: any) {
       if (error instanceof StorageError) {
         throw error;
@@ -171,11 +189,83 @@ export class StorageManager {
     }
   }
 
+  private async cleanupOldPredictions(): Promise<number> {
+    if (!this.db) {
+      throw new StorageError("Storage not initialized");
+    }
+
+    try {
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - this.retentionDays);
+      const cutoffISO = cutoffDate.toISOString();
+
+      this.logger.debug(`Cleaning up predictions older than ${cutoffISO}`);
+
+      const result = await this.db.run(
+        "DELETE FROM predictions WHERE created_at < ?",
+        cutoffISO
+      );
+
+      const deletedCount = result.changes || 0;
+
+      if (deletedCount > 0) {
+        this.logger.info(`Cleaned up ${deletedCount} old prediction(s)`);
+      } else {
+        this.logger.debug("No old predictions to clean up");
+      }
+
+      await this.db.run("VACUUM");
+
+      return deletedCount;
+    } catch (error: any) {
+      throw new StorageError(
+        `Failed to cleanup old predictions: ${error.message}`
+      );
+    }
+  }
+
+  /**
+   * Execute a raw SQL query (for velocity checks)
+   */
+  public async query(sql: string, params: any[] = []): Promise<any> {
+    if (!this.db) {
+      throw new StorageError("Storage not initialized");
+    }
+
+    try {
+      const result = await this.db.get(sql, params);
+      return result;
+    } catch (error: any) {
+      throw new StorageError(`Query failed: ${error.message}`);
+    }
+  }
+
+  public startCleanupJob(): void {
+    this.cleanupJob = cron.schedule("0 0 * * *", async () => {
+      try {
+        this.logger.info("Starting scheduled data cleanup...");
+        const deletedCount = await this.cleanupOldPredictions();
+        this.logger.info(
+          `Scheduled cleanup complete: ${deletedCount} record(s) deleted`
+        );
+      } catch (error: any) {
+        this.logger.error("Scheduled cleanup failed", error);
+      }
+    });
+
+    this.logger.info("Cleanup job scheduled: Every day at midnight (00:00)");
+  }
+
   isInitialized(): boolean {
     return this.initialized;
   }
 
   async close(): Promise<void> {
+    if (this.cleanupJob) {
+      this.cleanupJob.stop();
+      this.cleanupJob = null;
+      this.logger.debug("Cleanup job stopped");
+    }
     if (this.db) {
       await this.db.close();
       this.db = null;
