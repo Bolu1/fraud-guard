@@ -182,7 +182,7 @@ On other systems, ensure Python 3.8+ is properly installed.
     console.log('  - joblib==1.3.2');
     console.log('');
     console.log('You can now use:');
-    console.log('  await guard.retrain()');
+    console.log('  await fraudGuard.retrain()');
     console.log('');
     
     process.exit(0);

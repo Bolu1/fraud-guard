@@ -9,7 +9,7 @@ const commands: Record<string, string> = {
   retrain: "./retrain.js",
 };
 
-if (!command) {
+if (!command || command == "--help" || command == "-h") {
   console.log("");
   console.log("Fraud Guard CLI");
   console.log("");

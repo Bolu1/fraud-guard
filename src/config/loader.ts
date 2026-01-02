@@ -31,7 +31,6 @@ export function loadConfig(): FraudGuardConfig {
     }
 
     const mergedConfig = mergeConfigs(userConfig);
-    console.log(mergedConfig, " skndnsdsjdsdj");
     const configWithPaths = resolvePaths(mergedConfig);
     validateConfig(configWithPaths);
 

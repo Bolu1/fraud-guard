@@ -6,6 +6,7 @@ import { Logger } from "../utils/logger";
 import { getProjectBasePath } from "../config/defaults";
 import * as path from "path";
 import * as fs from "fs";
+import * as os from "os";
 
 export class RetrainingService {
   private config: FraudGuardConfig;
@@ -136,6 +137,21 @@ export class RetrainingService {
       const projectPath = getProjectBasePath(this.config.project.name);
       const outputDir = path.join(projectPath, "models", "retrained");
 
+      // Get currently active model directory
+      const activeModel = await this.storageManager.getActiveModel();
+      let currentModelDir: string;
+
+      if (activeModel && activeModel.path) {
+        currentModelDir = activeModel.path;
+        this.logger.info(
+          `Retraining from active model: ${activeModel.version}`
+        );
+      } else {
+        // Fall back to baseline
+        currentModelDir = path.join(os.homedir(), ".fraud-guard/baseline");
+        this.logger.info("No active model found - using baseline");
+      }
+
       // Ensure output directory exists
       if (!fs.existsSync(outputDir)) {
         fs.mkdirSync(outputDir, { recursive: true });
@@ -144,31 +160,41 @@ export class RetrainingService {
       // Get Python path
       const pythonPath = this.getPythonPath();
 
-      // Get script path (relative to project root)
+      // Get script path
       const scriptPath = path.join(__dirname, "../../scripts/retrain_model.py");
 
       this.logger.info(`Database: ${dbPath}`);
       this.logger.info(`Output: ${outputDir}`);
+      this.logger.info(`Current model: ${currentModelDir}`);
       this.logger.info(`Python: ${pythonPath}`);
-      this.logger.info(`Script: ${scriptPath}`);
 
       // Run Python retraining script
       const result = await this.runPythonScript(
         pythonPath,
         scriptPath,
         dbPath,
-        outputDir
+        outputDir,
+        currentModelDir // Pass current active model directory
       );
 
       if (result.success) {
         this.logger.info(`✓ Retraining successful! Version: ${result.version}`);
         this.logger.info(`  Accuracy: ${result.metrics?.accuracy.toFixed(4)}`);
 
+        // Register new model in database
+        await this.storageManager.registerModelVersion(
+          result.version!,
+          result.output_dir!,
+          result.metrics!,
+          false // Not baseline
+        );
+
+        this.logger.info(`✓ Model registered and set as active`);
+
         if (result.improvement) {
           this.logger.info(`  Improvement: +${result.improvement.toFixed(4)}`);
         }
       } else {
-        // Model was not better - this is not an error, just info
         this.logger.warn(
           `Retraining completed but new model not saved: ${result.error}`
         );
@@ -201,10 +227,11 @@ export class RetrainingService {
     pythonPath: string,
     scriptPath: string,
     dbPath: string,
-    outputDir: string
+    outputDir: string,
+    baselineDir: string
   ): Promise<RetrainingResult> {
     return new Promise((resolve, reject) => {
-      const args = [scriptPath, dbPath, outputDir];
+      const args = [scriptPath, dbPath, outputDir, baselineDir];
 
       this.logger.debug(`Executing: ${pythonPath} ${args.join(" ")}`);
 

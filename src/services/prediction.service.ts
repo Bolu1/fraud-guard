@@ -11,9 +11,13 @@ import { buildFraudCheckResult } from "../model/result-builder";
 import { resolveModelPath, initializeBaselineModel } from "../utils/paths";
 import { Logger } from "../utils/logger";
 import { InitializationError, ModelError } from "../utils/errors";
+import { StorageManager } from "../storage/manager";
+import * as path from "path";
+import * as os from "os";
 
 export class PredictionService {
   private modelManager: ModelManager | null = null;
+  private storageManager: StorageManager | null;
   private logger: Logger;
   private projectName: string;
   private modelPath: string | undefined;
@@ -24,17 +28,20 @@ export class PredictionService {
     projectName: string,
     modelPath: string | undefined,
     thresholds: { review: number; reject: number },
-    logger: Logger
+    logger: Logger,
+    storageManager?: StorageManager
   ) {
     this.projectName = projectName;
     this.modelPath = modelPath;
     this.thresholds = thresholds;
+    this.storageManager = storageManager || null;
     this.logger = logger;
+
+    this.modelManager = null as any;
   }
 
   async initialize(): Promise<void> {
     if (this.initialized) {
-      this.logger.debug("Prediction service already initialized");
       return;
     }
 
@@ -42,24 +49,41 @@ export class PredictionService {
       this.logger.info("Initializing prediction service...");
 
       await initializeBaselineModel();
-      this.logger.debug("Baseline model ready");
+      // Determine model path
+      let effectiveModelPath: string;
 
-      const resolvedModelPath = resolveModelPath(
-        this.projectName,
-        this.modelPath,
-        this.logger
-      );
-      this.logger.info(`Model path: ${resolvedModelPath}`);
+      // 1. Check if storage is available and has active model
+      if (this.storageManager) {
+        const activeModel = await this.storageManager.getActiveModel();
 
-      this.modelManager = new ModelManager(resolvedModelPath, this.logger);
+        if (activeModel && activeModel.path) {
+          effectiveModelPath = activeModel.path;
+          this.logger.info(`Using active model: ${activeModel.version}`);
+          this.logger.info(`Model path: ${effectiveModelPath}`);
+        } else {
+          // No active model in DB - use baseline
+          effectiveModelPath = this.getBaselineModelPath();
+          this.logger.info("No active model found - using baseline");
+        }
+      } else {
+        // No storage - use configured path or baseline
+        effectiveModelPath = this.modelPath || this.getBaselineModelPath();
+      }
+
+      this.modelPath = effectiveModelPath;
+
+      // Create ModelManager with the model directory
+      this.modelManager = new ModelManager(this.modelPath, this.logger);
+
+      // Use ModelManager's initialize method (it does everything!)
       await this.modelManager.initialize();
 
       this.initialized = true;
       this.logger.info("Prediction service ready");
     } catch (error: any) {
-      this.logger.error("Prediction service initialization failed", error);
+      this.logger.error("Failed to initialize prediction service", error);
       throw new InitializationError(
-        `Failed to initialize prediction service: ${error.message}`
+        `Prediction service initialization failed: ${error.message}`
       );
     }
   }
@@ -111,6 +135,9 @@ export class PredictionService {
     return this.modelManager.getModelInfo();
   }
 
+  /**
+   * Reload model from a new path
+   */
   async reload(modelPath?: string): Promise<void> {
     this.logger.info("Reloading model...");
 
@@ -308,6 +335,12 @@ export class PredictionService {
     }
 
     return { reasons, scoreAdjustment };
+  }
+
+  private getBaselineModelPath(): string {
+    const baselinePath = path.join(os.homedir(), ".fraud-guard/baseline");
+    this.logger.debug("Baseline model ready");
+    return baselinePath;
   }
 
   private isPrivateIp(ip: string): boolean {

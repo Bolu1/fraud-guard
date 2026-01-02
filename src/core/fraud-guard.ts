@@ -44,7 +44,8 @@ export class FraudGuard implements IFraudGuard {
       this.config.project.name,
       this.config.model.path,
       thresholds,
-      this.logger
+      this.logger,
+      this.storageManager || undefined
     );
 
     if (this.config.storage.enabled && this.config.storage.path) {
@@ -89,7 +90,6 @@ export class FraudGuard implements IFraudGuard {
       let velocityResult = null;
 
       if (this.velocityService && this.config.velocity?.enabled) {
-        console.log(" kkk ");
         this.logger.debug("Running velocity checks...");
         velocityResult = await this.velocityService.checkVelocity(transaction);
         this.logger.debug(`Velocity score: ${velocityResult.score.toFixed(3)}`);
@@ -225,15 +225,13 @@ export class FraudGuard implements IFraudGuard {
     this.logger.info("Fraud Guard closed");
   }
 
-  private async ensureInitialized(): Promise<void> {
+  async ensureInitialized(): Promise<void> {
     if (this.initialized) {
       return;
     }
 
     try {
       this.logger.info("Initializing Fraud Guard...");
-
-      await this.predictionService.initialize();
 
       if (this.storageManager && this.config.storage.enabled) {
         await this.storageManager.initialize();
@@ -252,6 +250,25 @@ export class FraudGuard implements IFraudGuard {
         this.logger.warn(
           "Velocity checks require storage to be enabled. Velocity checks will be skipped."
         );
+      }
+
+      await this.predictionService.initialize();
+
+      // Then initialize retraining service (if enabled)
+      if (this.storageManager && this.config.retraining?.enabled) {
+        this.retrainingService = new RetrainingService(
+          this.config,
+          this.storageManager,
+          this.logger
+        );
+
+        this.retrainingService.setRetrainingCallback(
+          this.reloadModelAfterRetraining.bind(this)
+        );
+
+        this.retrainingService.startScheduledRetraining();
+
+        this.logger.info("Retraining enabled");
       }
 
       this.initialized = true;

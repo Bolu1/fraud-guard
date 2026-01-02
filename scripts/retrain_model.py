@@ -1,53 +1,27 @@
 #!/usr/bin/env python3
 """
-Fraud Detection Model Retraining Script
+Fraud Detection Model Incremental Retraining Script
 
 This script retrains the fraud detection model using feedback data
-from the SQLite database.
+from the SQLite database using incremental learning (fine-tuning).
 """
 
 import sys
 import json
 import sqlite3
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Suppress TensorFlow warnings
+
 import numpy as np
 import pandas as pd
-from pathlib import Path
 from datetime import datetime
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import (
-    accuracy_score,
-    precision_score,
-    recall_score,
-    f1_score,
-    roc_auc_score
-)
-import joblib
-import warnings
 
-warnings.filterwarnings('ignore')
+# TensorFlow imports
+import tensorflow as tf
+import tf_keras as keras
 
-
-def load_current_model_metrics(output_dir: str) -> dict:
-    """Load current model metrics from metadata.json"""
-    metadata_path = Path(output_dir) / 'metadata.json'
-    
-    if not metadata_path.exists():
-        print("No existing model found - this is first training")
-        return None
-    
-    try:
-        with open(metadata_path, 'r') as f:
-            metadata = json.load(f)
-        
-        print(f"Current model version: {metadata.get('version', 'unknown')}")
-        print(f"Current model accuracy: {metadata['metrics']['accuracy']:.4f}")
-        
-        return metadata['metrics']
-    except Exception as e:
-        print(f"Warning: Could not load current model metrics: {e}")
-        return None
-
+# TensorFlow.js converter
+import subprocess
 
 def load_feedback_data(db_path: str) -> pd.DataFrame:
     """Load transactions with feedback from database"""
@@ -76,8 +50,20 @@ def load_feedback_data(db_path: str) -> pd.DataFrame:
     return df
 
 
-def prepare_features(df: pd.DataFrame) -> tuple:
-    """Prepare features and labels"""
+def load_scaler_params(scaler_path: str) -> dict:
+    """Load frozen scaler parameters"""
+    print(f"Loading scaler parameters from: {scaler_path}")
+    
+    with open(scaler_path, 'r') as f:
+        scaler_params = json.load(f)
+    
+    print(f"Loaded scaler with {len(scaler_params['mean'])} features")
+    
+    return scaler_params
+
+
+def prepare_features(df: pd.DataFrame, scaler_params: dict) -> tuple:
+    """Prepare features and labels using frozen scaler"""
     print("Preparing features...")
     
     # One-hot encode category
@@ -86,116 +72,189 @@ def prepare_features(df: pd.DataFrame) -> tuple:
     # Combine features
     feature_cols = ['amt', 'hour', 'month', 'dayofweek', 'day']
     X = pd.concat([df[feature_cols], category_dummies], axis=1)
-    y = df['actual_fraud']
+    y = df['actual_fraud'].values
     
-    print(f"Features shape: {X.shape}")
+    print(f"Features shape before alignment: {X.shape}")
     print(f"Class distribution: Fraud={y.sum()}, Legitimate={len(y)-y.sum()}")
     
-    return X, y
+    # Get expected feature columns from scaler
+    expected_features = list(scaler_params['mean'].keys())
+    
+    # Align columns with scaler (reorder and fill missing)
+    X = X.reindex(columns=expected_features, fill_value=0)
+    
+    print(f"Features shape after alignment: {X.shape}")
+    
+    # Apply frozen scaler (standardization)
+    scaler_mean = np.array([scaler_params['mean'][col] for col in expected_features])
+    scaler_std = np.array([scaler_params['std'][col] for col in expected_features])
+    
+    X_scaled = (X.values - scaler_mean) / scaler_std
+    X_scaled = X_scaled.astype(np.float32)
+    
+    # Reshape for CNN (add channel dimension)
+    X_scaled = X_scaled.reshape(X_scaled.shape[0], X_scaled.shape[1], 1)
+    y = y.astype(np.float32)
+    
+    print(f"Final shape: {X_scaled.shape}")
+    
+    return X_scaled, y
 
 
-def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> dict:
-    """Train Random Forest model"""
-    print("Training model...")
+def load_base_model(model_path: str) -> keras.Model:
+    """Load base Keras model"""
+    print(f"Loading base model from: {model_path}")
     
-    # Split data
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=test_size, random_state=42, stratify=y
-    )
+    model = keras.models.load_model(model_path)
     
-    print(f"Training set: {len(X_train)} samples")
-    print(f"Test set: {len(X_test)} samples")
+    print("Base model loaded successfully")
+    print("\nModel architecture:")
+    model.summary()
     
-    # Train model
-    model = RandomForestClassifier(
-        n_estimators=100,
-        max_depth=10,
-        min_samples_split=10,
-        min_samples_leaf=5,
-        random_state=42,
-        class_weight='balanced',
-        n_jobs=-1
-    )
+    return model
+
+
+def load_current_model_metrics(metadata_path: str) -> dict:
+    """Load current model metrics from metadata.json"""
+    if not os.path.exists(metadata_path):
+        print("No existing metadata found - this is first retraining")
+        return None
     
-    model.fit(X_train, y_train)
+    try:
+        with open(metadata_path, 'r') as f:
+            metadata = json.load(f)
+        
+        print(f"Current model version: {metadata.get('version', 'unknown')}")
+        print(f"Current model accuracy: {metadata['metrics']['accuracy']:.4f}")
+        
+        return metadata['metrics']
+    except Exception as e:
+        print(f"Warning: Could not load current model metrics: {e}")
+        return None
+
+
+def evaluate_model(model: keras.Model, X: np.ndarray, y: np.ndarray) -> dict:
+    """Evaluate model and return metrics"""
+    loss, accuracy = model.evaluate(X, y, verbose=0)
     
-    # Evaluate
-    y_pred = model.predict(X_test)
-    y_prob = model.predict_proba(X_test)[:, 1]
+    # Get predictions for additional metrics
+    y_pred_prob = model.predict(X, verbose=0)
+    y_pred = (y_pred_prob > 0.5).astype(int).flatten()
+    
+    # Calculate precision, recall, F1
+    from sklearn.metrics import precision_score, recall_score, f1_score, roc_auc_score
     
     metrics = {
-        'accuracy': float(accuracy_score(y_test, y_pred)),
-        'precision': float(precision_score(y_test, y_pred)),
-        'recall': float(recall_score(y_test, y_pred)),
-        'f1': float(f1_score(y_test, y_pred)),
-        'auc': float(roc_auc_score(y_test, y_prob)),
-        'training_samples': int(len(X_train)),
-        'test_samples': int(len(X_test)),
+        'accuracy': float(accuracy),
+        'loss': float(loss),
+        'precision': float(precision_score(y, y_pred, zero_division=0)),
+        'recall': float(recall_score(y, y_pred, zero_division=0)),
+        'f1': float(f1_score(y, y_pred, zero_division=0)),
+        'auc': float(roc_auc_score(y, y_pred_prob)),
     }
     
-    print("\nModel Performance:")
-    print(f"  Accuracy:  {metrics['accuracy']:.4f}")
-    print(f"  Precision: {metrics['precision']:.4f}")
-    print(f"  Recall:    {metrics['recall']:.4f}")
-    print(f"  F1 Score:  {metrics['f1']:.4f}")
-    print(f"  AUC:       {metrics['auc']:.4f}")
-    
-    return model, metrics, X.columns.tolist()
+    return metrics
 
 
-def calculate_scaler_params(X: pd.DataFrame) -> dict:
-    """Calculate mean and std for standardization"""
-    print("Calculating scaler parameters...")
+def fine_tune_model(model: keras.Model, X: np.ndarray, y: np.ndarray, 
+                    epochs: int = 10, batch_size: int = 4) -> dict:
+    """Fine-tune model with new data"""
+    print(f"\nFine-tuning model...")
+    print(f"  Epochs: {epochs}")
+    print(f"  Batch size: {batch_size}")
+    print(f"  Learning rate: 0.0001 (low to prevent catastrophic forgetting)")
     
-    scaler_params = {
-        'mean': {k: float(v) for k, v in X.mean().to_dict().items()},
-        'std': {k: float(v) for k, v in X.std().to_dict().items()}
-    }
+    # Compile with very low learning rate
+    model.compile(
+        optimizer=keras.optimizers.Adam(learning_rate=0.0001),
+        loss='binary_crossentropy',
+        metrics=['accuracy']
+    )
     
-    return scaler_params
+    # Train
+    history = model.fit(
+        X, y,
+        epochs=epochs,
+        batch_size=batch_size,
+        validation_split=0.2,
+        verbose=1
+    )
+    
+    return history
 
 
-def save_model(model, scaler_params: dict, feature_names: list, 
-               output_dir: str, metrics: dict) -> str:
-    """Save model and parameters"""
-    print(f"Saving model to: {output_dir}")
+def save_model(model: keras.Model, output_dir: str, metrics: dict, 
+               training_samples: int, test_samples: int) -> str:
+    """Save retrained model and metadata"""
+    print(f"\nSaving model to: {output_dir}")
     
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
     
-    # Save sklearn model
-    model_path = output_path / 'model.pkl'
-    joblib.dump(model, model_path)
-    print(f"  ✓ Saved model: {model_path}")
-    
-    # Save scaler parameters
-    scaler_path = output_path / 'scaler_params.json'
-    with open(scaler_path, 'w') as f:
-        json.dump(scaler_params, f, indent=2)
-    print(f"  ✓ Saved scaler: {scaler_path}")
-    
-    # Save feature names
-    features_path = output_path / 'feature_names.json'
-    with open(features_path, 'w') as f:
-        json.dump(feature_names, f, indent=2)
-    print(f"  ✓ Saved features: {features_path}")
+    # Save Keras H5 model
+    h5_path = os.path.join(output_dir, 'fraud_detection_model.h5')
+    model.save(h5_path)
+    print(f"  ✓ Saved Keras model: {h5_path}")
     
     # Save metadata
     version = datetime.now().strftime('%Y%m%d_%H%M%S')
     metadata = {
         'version': version,
         'created_at': datetime.now().isoformat(),
-        'metrics': metrics,
-        'feature_count': len(feature_names),
-        'model_type': 'RandomForestClassifier'
+        'metrics': {
+            'accuracy': metrics['accuracy'],
+            'precision': metrics['precision'],
+            'recall': metrics['recall'],
+            'f1': metrics['f1'],
+            'auc': metrics['auc'],
+            'training_samples': training_samples,
+            'test_samples': test_samples,
+        },
+        'model_type': 'CNN',
+        'is_baseline': False,
     }
     
-    metadata_path = output_path / 'metadata.json'
+    metadata_path = os.path.join(output_dir, 'metadata.json')
     with open(metadata_path, 'w') as f:
         json.dump(metadata, f, indent=2)
     print(f"  ✓ Saved metadata: {metadata_path}")
     
     return version
+
+
+def convert_to_tfjs(h5_path: str, tfjs_output_dir: str):
+    """Convert Keras H5 model to TensorFlow.js format"""
+    print(f"\nConverting to TensorFlow.js...")
+    print(f"  Output: {tfjs_output_dir}/")
+    
+    os.makedirs(tfjs_output_dir, exist_ok=True)
+    
+    result = subprocess.run(
+        [
+            'tensorflowjs_converter',
+            '--input_format=keras',
+            '--output_format=tfjs_layers_model',
+            h5_path,
+            tfjs_output_dir
+        ],
+        capture_output=True,
+        text=True
+    )
+    
+    if result.returncode == 0:
+        print(f"  ✓ Conversion successful!")
+        
+        # List generated files
+        files = os.listdir(tfjs_output_dir)
+        print(f"\n  Generated files:")
+        for f in sorted(files):
+            file_path = os.path.join(tfjs_output_dir, f)
+            size = os.path.getsize(file_path)
+            size_kb = size / 1024
+            print(f"    - {f} ({size_kb:.2f} KB)")
+    else:
+        print(f"  ❌ Conversion failed:")
+        print(result.stderr)
+        raise Exception("TensorFlow.js conversion failed")
 
 
 def main():
@@ -206,38 +265,104 @@ def main():
     
     db_path = sys.argv[1]
     output_dir = sys.argv[2]
+    current_model_dir = sys.argv[3]
     
     print("=" * 80)
-    print("FRAUD DETECTION MODEL RETRAINING")
+    print("FRAUD DETECTION MODEL INCREMENTAL RETRAINING")
     print("=" * 80)
     print()
     
     try:
+        # Determine base model path (assume baseline model location)
+        # This should be passed or detected from config
+        if len(sys.argv) < 4:
+            print("Usage: python retrain_model.py <db_path> <output_dir> <baseline_dir>")
+            sys.exit(1)
+
+        db_path = sys.argv[1]
+        output_dir = sys.argv[2]
+        baseline_dir = sys.argv[3]  # Pass baseline directory
+        base_model_h5 = os.path.join(baseline_dir, 'fraud_detection_model.h5')
+        scaler_path = os.path.join(baseline_dir, 'scaler_params.json')
+        metadata_path = os.path.join(output_dir, 'metadata.json')
+        
+        print(f"Current model directory: {current_model_dir}")
+        print(f"Current model H5: {current_model_h5}")
+        print(f"Scaler params: {scaler_path}")
+        print()
+        
+        # Check if H5 model exists
+        if not os.path.exists(current_model_h5):
+            raise FileNotFoundError(
+                f"H5 model not found at {current_model_h5}. "
+                "Ensure fraud_detection_model.h5 exists in the model directory."
+            )
+        
         # Load current model metrics (if exists)
-        current_metrics = load_current_model_metrics(output_dir)
+        current_metrics = load_current_model_metrics(metadata_path)
         
         # Load data
         df = load_feedback_data(db_path)
         
-        # Prepare features
-        X, y = prepare_features(df)
+        # Load scaler
+        scaler_params = load_scaler_params(scaler_path)
         
-        # Train model
-        model, new_metrics, feature_names = train_model(X, y)
+        # Prepare features
+        X, y = prepare_features(df, scaler_params)
+        
+        # Split for evaluation
+        from sklearn.model_selection import train_test_split
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42, stratify=y
+        )
+        
+        print(f"\nTraining samples: {len(X_train)}")
+        print(f"Test samples: {len(X_test)}")
+        
+        # Load base model
+        model = load_base_model(base_model_h5)
+        
+        # Evaluate before retraining
+        print("\n" + "=" * 80)
+        print("Evaluating BEFORE Retraining")
+        print("=" * 80)
+        metrics_before = evaluate_model(model, X_test, y_test)
+        print(f"  Accuracy:  {metrics_before['accuracy']:.4f}")
+        print(f"  Precision: {metrics_before['precision']:.4f}")
+        print(f"  Recall:    {metrics_before['recall']:.4f}")
+        print(f"  F1:        {metrics_before['f1']:.4f}")
+        print(f"  AUC:       {metrics_before['auc']:.4f}")
+        
+        # Fine-tune model
+        print("\n" + "=" * 80)
+        print("Fine-Tuning Model")
+        print("=" * 80)
+        fine_tune_model(model, X_train, y_train, epochs=10, batch_size=4)
+        
+        # Evaluate after retraining
+        print("\n" + "=" * 80)
+        print("Evaluating AFTER Retraining")
+        print("=" * 80)
+        metrics_after = evaluate_model(model, X_test, y_test)
+        print(f"  Accuracy:  {metrics_after['accuracy']:.4f}")
+        print(f"  Precision: {metrics_after['precision']:.4f}")
+        print(f"  Recall:    {metrics_after['recall']:.4f}")
+        print(f"  F1:        {metrics_after['f1']:.4f}")
+        print(f"  AUC:       {metrics_after['auc']:.4f}")
         
         # Compare with current model
+        print("\n" + "=" * 80)
+        print("MODEL COMPARISON")
+        print("=" * 80)
+        
         if current_metrics is not None:
-            print()
-            print("=" * 80)
-            print("MODEL COMPARISON")
-            print("=" * 80)
             print(f"Current Accuracy: {current_metrics['accuracy']:.4f}")
-            print(f"New Accuracy:     {new_metrics['accuracy']:.4f}")
+            print(f"New Accuracy:     {metrics_after['accuracy']:.4f}")
             
-            if new_metrics['accuracy'] <= current_metrics['accuracy']:
+            if metrics_after['accuracy'] <= current_metrics['accuracy']:
                 print()
                 print("❌ NEW MODEL IS NOT BETTER")
-                print(f"   New model accuracy ({new_metrics['accuracy']:.4f}) <= Current ({current_metrics['accuracy']:.4f})")
+                print(f"   New model accuracy ({metrics_after['accuracy']:.4f}) <= Current ({current_metrics['accuracy']:.4f})")
                 print("   Aborting - keeping current model")
                 print()
                 
@@ -245,30 +370,46 @@ def main():
                     'success': False,
                     'error': 'New model accuracy not better than current model',
                     'current_accuracy': current_metrics['accuracy'],
-                    'new_accuracy': new_metrics['accuracy'],
-                    'metrics': new_metrics
+                    'new_accuracy': metrics_after['accuracy'],
+                    'metrics': metrics_after
                 }
                 
                 print("RESULT_JSON:", json.dumps(result))
                 sys.exit(1)
             else:
-                improvement = new_metrics['accuracy'] - current_metrics['accuracy']
+                improvement = metrics_after['accuracy'] - current_metrics['accuracy']
                 print()
                 print(f"✓ NEW MODEL IS BETTER (+{improvement:.4f})")
                 print()
-        
-        # Calculate scaler parameters
-        scaler_params = calculate_scaler_params(X)
+        else:
+            print("First retraining - no previous model to compare")
+            print()
         
         # Save model
-        version = save_model(model, scaler_params, feature_names, output_dir, new_metrics)
+        version = save_model(
+            model, 
+            output_dir, 
+            metrics_after,
+            len(X_train),
+            len(X_test)
+        )
+        
+        # Convert to TensorFlow.js
+        h5_path = os.path.join(output_dir, 'fraud_detection_model.h5')
+        convert_to_tfjs(h5_path, output_dir)
+        
+        # Copy scaler params to output directory
+        import shutil
+        output_scaler = os.path.join(output_dir, 'scaler_params.json')
+        shutil.copy(scaler_path, output_scaler)
+        print(f"  ✓ Copied scaler params: {output_scaler}")
         
         print()
         print("=" * 80)
         print("RETRAINING COMPLETE")
         print("=" * 80)
         print(f"Model Version: {version}")
-        print(f"Accuracy: {new_metrics['accuracy']:.4f}")
+        print(f"Accuracy: {metrics_after['accuracy']:.4f}")
         print(f"Output: {output_dir}")
         print()
         
@@ -276,15 +417,17 @@ def main():
         result = {
             'success': True,
             'version': version,
-            'metrics': new_metrics,
+            'metrics': metrics_after,
             'output_dir': output_dir,
-            'improvement': new_metrics['accuracy'] - current_metrics['accuracy'] if current_metrics else None
+            'improvement': metrics_after['accuracy'] - current_metrics['accuracy'] if current_metrics else None
         }
         
         print("RESULT_JSON:", json.dumps(result))
         
     except Exception as e:
         print(f"\n❌ ERROR: {str(e)}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
         result = {
             'success': False,
             'error': str(e)

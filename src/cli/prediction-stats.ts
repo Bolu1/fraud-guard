@@ -23,18 +23,18 @@ async function showPredictionStats() {
   }
   
   try {
-    // Access storage manager through a check (initializes storage)
-    await guard.check({
-      amount: 1,
-      timestamp: new Date(),
-      category: 'food_dining' as any,
-      id: 'temp_check',
-      customerId: 'temp_customer',
-    });
+    // Initialize storage without running a check
+    await (guard as any).ensureInitialized();
     
-    // Now we can access storage internals
-    const feedbackCount = await (guard as any).storageManager.countPredictionsWithFeedback();
-    const totalPredictions = await (guard as any).storageManager.getTotalPredictions();
+    // Access storage manager
+    const storageManager = (guard as any).storageManager;
+    
+    if (!storageManager) {
+      throw new Error('Storage manager not initialized');
+    }
+    
+    const feedbackCount = await storageManager.countPredictionsWithFeedback();
+    const totalPredictions = await storageManager.getTotalPredictions();
     
     console.log('Prediction Statistics:');
     console.log(`  Total Predictions:         ${totalPredictions}`);

@@ -12,6 +12,7 @@ import { StorageError } from "../utils/errors";
 import { Logger } from "../utils/logger";
 import { ensureDirectoryExists } from "../utils/paths";
 import * as path from "path";
+import * as os from "os";
 
 export class StorageManager {
   private db: Database | null = null;
@@ -47,6 +48,9 @@ export class StorageManager {
 
       this.initialized = true;
       this.logger.info(`Storage initialized: ${this.dbPath}`);
+
+      await this.ensureBaselineRegistered();
+      this.logger.debug(`Retention period: ${this.retentionDays} days`);
     } catch (error: any) {
       throw new StorageError(`Failed to initialize storage: ${error.message}`);
     }
@@ -256,6 +260,124 @@ export class StorageManager {
     this.logger.info("Cleanup job scheduled: Every day at midnight (00:00)");
   }
 
+  /**
+   * Get total number of predictions
+   */
+  async getTotalPredictions(): Promise<number> {
+    if (!this.db) {
+      throw new StorageError("Storage not initialized");
+    }
+
+    try {
+      const result = await this.db.get(
+        "SELECT COUNT(*) as count FROM predictions"
+      );
+      return result?.count || 0;
+    } catch (error: any) {
+      throw new StorageError(
+        `Failed to get total predictions: ${error.message}`
+      );
+    }
+  }
+
+  /**
+   * Get the currently active model
+   */
+  async getActiveModel(): Promise<{ version: string; path: string } | null> {
+    if (!this.db) {
+      throw new StorageError("Storage not initialized");
+    }
+
+    try {
+      const result = await this.db.get(`
+      SELECT version, model_path 
+      FROM model_versions 
+      WHERE is_active = 1
+      LIMIT 1
+    `);
+
+      if (!result) {
+        return null;
+      }
+
+      return {
+        version: result.version,
+        path: result.model_path || "",
+      };
+    } catch (error: any) {
+      throw new StorageError(`Failed to get active model: ${error.message}`);
+    }
+  }
+
+  /**
+   * Register a new model version
+   */
+  async registerModelVersion(
+    version: string,
+    modelPath: string,
+    metrics: {
+      accuracy: number;
+      precision: number;
+      recall: number;
+      f1: number;
+      auc: number;
+      training_samples: number;
+      test_samples: number;
+    },
+    isBaseline: boolean = false
+  ): Promise<void> {
+    if (!this.db) {
+      throw new StorageError("Storage not initialized");
+    }
+
+    try {
+      // Deactivate all existing models
+      await this.db.run("UPDATE model_versions SET is_active = 0");
+
+      // Insert new model as active
+      await this.db.run(
+        `INSERT INTO model_versions (
+        version, created_at, is_baseline, is_active, 
+        training_samples, accuracy, model_path
+      ) VALUES (?, datetime('now'), ?, 1, ?, ?, ?)`,
+        [
+          version,
+          isBaseline ? 1 : 0,
+          metrics.training_samples,
+          metrics.accuracy,
+          modelPath,
+        ]
+      );
+
+      this.logger.info(`Registered model version: ${version} (active)`);
+    } catch (error: any) {
+      throw new StorageError(`Failed to register model: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get all model versions
+   */
+  async getModelVersions(): Promise<any[]> {
+    if (!this.db) {
+      throw new StorageError("Storage not initialized");
+    }
+
+    try {
+      const results = await this.db.all(`
+      SELECT 
+        version, created_at, is_baseline, is_active,
+        training_samples, accuracy, model_path
+      FROM model_versions
+      ORDER BY created_at DESC
+    `);
+
+      return results || [];
+    } catch (error: any) {
+      throw new StorageError(`Failed to get model versions: ${error.message}`);
+    }
+  }
+
   isInitialized(): boolean {
     return this.initialized;
   }
@@ -271,6 +393,43 @@ export class StorageManager {
       this.db = null;
       this.initialized = false;
       this.logger.debug("Storage closed");
+    }
+  }
+
+  async ensureBaselineRegistered(): Promise<void> {
+    if (!this.db) {
+      throw new StorageError("Storage not initialized");
+    }
+
+    try {
+      // Check if any models exist
+      const existing = await this.db.get(
+        "SELECT COUNT(*) as count FROM model_versions"
+      );
+
+      if (existing.count === 0) {
+        // No models registered - register baseline
+        const baselinePath = path.join(os.homedir(), ".fraud-guard/baseline");
+
+        await this.registerModelVersion(
+          "v1.0.0",
+          baselinePath,
+          {
+            accuracy: 0.95, // Baseline model metrics
+            precision: 0.93,
+            recall: 0.91,
+            f1: 0.92,
+            auc: 0.96,
+            training_samples: 1000,
+            test_samples: 250,
+          },
+          true // Is baseline
+        );
+
+        this.logger.info("Baseline model registered");
+      }
+    } catch (error: any) {
+      throw new StorageError(`Failed to register baseline: ${error.message}`);
     }
   }
 

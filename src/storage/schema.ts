@@ -47,7 +47,8 @@ CREATE TABLE IF NOT EXISTS model_versions (
   training_samples INTEGER,
   training_duration_seconds REAL,
   accuracy REAL,
-  notes TEXT
+  notes TEXT,
+  model_path TEXT
 );
 
 -- Metadata table
