@@ -1,7 +1,7 @@
 {
-  "name": "fraud-guard",
+  "name": "@bolu1/fraud-guard",
   "version": "1.0.0",
-  "description": "",
+  "description": "An on-premise fraud detection package for Node.js applications with incremental learning for it's AI model and velocity checks.",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -17,8 +17,9 @@
   },
   "files": [
     "dist",
-    "models/baseline.onnx",
-    "training",
+    "baseline",
+    "scripts/requirements.txt",
+    "scripts/retrain_model.py",
     "README.md",
     "LICENSE"
   ],
@@ -52,20 +53,27 @@
     "fintech",
     "typescript",
     "self-hosted",
-    "onnx"
+    "ai",
+    "tensorflow",
+    "cnn",
+    "fraud-prevention",
+    "risk-assessment",
+    "behavioral-analysis"
   ],
-  "author": "",
-  "license": "ISC",
+  "author": "Bolu boluadetifa@gmail.com",
+  "license": "MIT",
   "type": "commonjs",
   "bugs": {
     "url": "https://github.com/bolu1/fraud-guard/issues"
   },
   "homepage": "https://github.com/bolu1/fraud-guard#readme",
   "dependencies": {
-    "better-sqlite3": "^12.5.0",
     "commander": "^14.0.2",
     "js-yaml": "^4.1.1",
-    "nanoid": "^5.1.6"
+    "nanoid": "^5.1.6",
+    "node-cron": "^4.2.1",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

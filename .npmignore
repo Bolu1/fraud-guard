@@ -1,0 +1,12 @@
+# Source files
+src/
+tsconfig.json
+test-*.ts
+*.test.ts
+
+# Development files
+.git/
+.github/
+node_modules/
+*.log
+.DS_Store

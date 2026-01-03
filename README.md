@@ -44,7 +44,7 @@ An on-premise fraud detection package for Node.js applications with incremental 
 ## Installation
 
 ```bash
-npm install fraud-guard
+npm install @bolu1/fraud-guard
 ```
 
 TypeScript types are included by default.
@@ -69,7 +69,7 @@ thresholds:
 **2. Use in your application:**
 
 ```typescript
-import { FraudGuard } from 'fraud-guard';
+import { FraudGuard } from '@bolu1/fraud-guard';
 
 const guard = new FraudGuard();
 
@@ -93,7 +93,7 @@ guard.close();
 ### 1. Initialize Fraud Guard
 
 ```typescript
-import { FraudGuard } from 'fraud-guard';
+import { FraudGuard } from '@bolu1/fraud-guard';
 
 const guard = new FraudGuard();
 ```
@@ -104,10 +104,7 @@ const guard = new FraudGuard();
 const transaction = {
   amount: 250.50,
   category: 'food_dining',
-  timestamp: new Date(),
-  customerId: 'user_456',
-  ipAddress: '203.0.113.45',
-  deviceId: 'mobile_xyz'
+  timestamp: new Date()
 };
 
 const result = await guard.check(transaction);
@@ -146,14 +143,25 @@ switch (result.action) {
 After investigation, provide feedback for velocity checks to improve the model:
 
 ```typescript
+import { FraudGuard } from '@bolu1/fraud-guard';
+
+const guard = new FraudGuard();
+
+const result = await guard.check({
+  id: `test_tx` // Required when you want to provide feedback, should be your transaction  so it's easy to provide feedback
+  amount: 1500.00,
+  category: 'shopping_net',
+  timestamp: new Date()
+});
+
 // Transaction was legitimate
-await guard.provideFeedback(result.checkId, false);
+await guard.feedback(transactionId, false); //same id passed when the transaction was checked
 
 // Transaction was fraud
-await guard.provideFeedback(result.checkId, true);
+await guard.feedback(transactionId, true);
 
 // Transaction with status(optional for failed transaction check)
-await guard.provideFeedback(result.checkId, true, "failed");
+await guard.feedback(transactionId, true, "failed");
 ```
 
 ### 5. Close When Done
@@ -423,10 +431,10 @@ Providing feedback after manual review helps the model learn:
 
 ```typescript
 // After confirming transaction was fraud
-await guard.provideFeedback(checkId, true);
+await guard.feedback(checkId, true);
 
 // After confirming transaction was legitimate
-await guard.provideFeedback(checkId, false);
+await guard.feedback(checkId, false);
 ```
 
 The model uses this feedback during automatic retraining to improve accuracy.
@@ -667,7 +675,7 @@ npx fraud-guard switch-model 20260103_163557
 ### FraudGuard Class
 
 ```typescript
-import { FraudGuard } from 'fraud-guard';
+import { FraudGuard } from '@bolu1/fraud-guard';
 ```
 
 #### Constructor
@@ -700,7 +708,7 @@ const result = await guard.check({
 Provide feedback on a previous fraud check.
 
 ```typescript
-await guard.provideFeedback(result.checkId, true);
+await guard.feedback(result.checkId, true);
 ```
 
 **`retrain(): Promise<RetrainingResult>`**
@@ -841,7 +849,7 @@ storage:
 ### E-commerce Checkout
 
 ```typescript
-import { FraudGuard } from 'fraud-guard';
+import { FraudGuard } from '@bolu1/fraud-guard';
 import express from 'express';
 
 const app = express();
@@ -880,7 +888,7 @@ app.post('/checkout', async (req, res) => {
 // After manual review
 app.post('/review/:checkId', async (req, res) => {
   const { isFraud } = req.body;
-  await guard.provideFeedback(req.params.checkId, isFraud);
+  await guard.feedback(req.params.checkId, isFraud);
   res.json({ success: true });
 });
 ```
@@ -948,7 +956,7 @@ async function createSubscription(user: User, plan: Plan) {
 // After user proves legitimacy (or commits fraud)
 async function updateFraudStatus(subscription: Subscription) {
   if (subscription.fraudCheckId) {
-    await guard.provideFeedback(
+    await guard.feedback(
       subscription.fraudCheckId,
       subscription.isFraud
     );
@@ -1042,7 +1050,6 @@ MIT License - see LICENSE file for details
 
 ---
 
-## Support
+## 📞 Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/fraud-guard/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/fraud-guard/discussions)
+For issues and questions, please visit our [GitHub repository](https://github.com/Bolu1/fraud-guard).
