@@ -57,7 +57,7 @@ def load_scaler_params(scaler_path: str) -> dict:
     with open(scaler_path, 'r') as f:
         scaler_params = json.load(f)
     
-    print(f"Loaded scaler with {len(scaler_params['mean'])} features")
+    print(f"Loaded scaler with {len(scaler_params['feature_columns'])} features")
     
     return scaler_params
 
@@ -78,18 +78,34 @@ def prepare_features(df: pd.DataFrame, scaler_params: dict) -> tuple:
     print(f"Class distribution: Fraud={y.sum()}, Legitimate={len(y)-y.sum()}")
     
     # Get expected feature columns from scaler
-    expected_features = list(scaler_params['mean'].keys())
+    expected_features = scaler_params['feature_columns']
     
     # Align columns with scaler (reorder and fill missing)
-    X = X.reindex(columns=expected_features, fill_value=0)
+    # Note: category columns in scaler don't have 'category_' prefix
+    # So we need to map them
+    X_aligned = []
+    for feature in expected_features:
+        if feature in ['amt', 'hour', 'month', 'dayofweek', 'day']:
+            # Direct numeric feature
+            X_aligned.append(X[feature].values)
+        else:
+            # Category feature - add 'category_' prefix
+            category_col = f'category_{feature}'
+            if category_col in X.columns:
+                X_aligned.append(X[category_col].values)
+            else:
+                # Category not present in data - fill with 0
+                X_aligned.append(np.zeros(len(X)))
     
-    print(f"Features shape after alignment: {X.shape}")
+    X_aligned = np.array(X_aligned).T
+    
+    print(f"Features shape after alignment: {X_aligned.shape}")
     
     # Apply frozen scaler (standardization)
-    scaler_mean = np.array([scaler_params['mean'][col] for col in expected_features])
-    scaler_std = np.array([scaler_params['std'][col] for col in expected_features])
+    scaler_mean = np.array(scaler_params['mean'])
+    scaler_std = np.array(scaler_params['std'])
     
-    X_scaled = (X.values - scaler_mean) / scaler_std
+    X_scaled = (X_aligned - scaler_mean) / scaler_std
     X_scaled = X_scaled.astype(np.float32)
     
     # Reshape for CNN (add channel dimension)
@@ -99,7 +115,6 @@ def prepare_features(df: pd.DataFrame, scaler_params: dict) -> tuple:
     print(f"Final shape: {X_scaled.shape}")
     
     return X_scaled, y
-
 
 def load_base_model(model_path: str) -> keras.Model:
     """Load base Keras model"""
@@ -114,20 +129,20 @@ def load_base_model(model_path: str) -> keras.Model:
     return model
 
 
-def load_current_model_metrics(metadata_path: str) -> dict:
-    """Load current model metrics from metadata.json"""
-    if not os.path.exists(metadata_path):
-        print("No existing metadata found - this is first retraining")
+def load_current_model_metrics(model_config_path: str) -> dict:
+    """Load current model metrics from model_config.json"""
+    if not os.path.exists(model_config_path):
+        print("No existing model config found - this is first retraining")
         return None
     
     try:
-        with open(metadata_path, 'r') as f:
-            metadata = json.load(f)
+        with open(model_config_path, 'r') as f:
+            model_config = json.load(f)
         
-        print(f"Current model version: {metadata.get('version', 'unknown')}")
-        print(f"Current model accuracy: {metadata['metrics']['accuracy']:.4f}")
+        print(f"Current model version: {model_config.get('version', 'unknown')}")
+        print(f"Current model accuracy: {model_config['metrics']['accuracy']:.4f}")
         
-        return metadata['metrics']
+        return model_config['metrics']
     except Exception as e:
         print(f"Warning: Could not load current model metrics: {e}")
         return None
@@ -184,7 +199,7 @@ def fine_tune_model(model: keras.Model, X: np.ndarray, y: np.ndarray,
 
 
 def save_model(model: keras.Model, output_dir: str, metrics: dict, 
-               training_samples: int, test_samples: int) -> str:
+               training_samples: int, test_samples: int, feature_columns: list) -> str:
     """Save retrained model and metadata"""
     print(f"\nSaving model to: {output_dir}")
     
@@ -195,9 +210,14 @@ def save_model(model: keras.Model, output_dir: str, metrics: dict,
     model.save(h5_path)
     print(f"  ✓ Saved Keras model: {h5_path}")
     
-    # Save metadata
+    # Save model_config.json
     version = datetime.now().strftime('%Y%m%d_%H%M%S')
-    metadata = {
+    model_config = {
+        'feature_columns': feature_columns,
+        'input_shape': [len(feature_columns), 1],  # ← ADD THIS
+        'threshold': 0.5,
+        'note': 'Input features must be standardized using StandardScaler parameters',
+        'required_fields': ['amt', 'hour', 'month', 'dayofweek', 'day', 'category'],
         'version': version,
         'created_at': datetime.now().isoformat(),
         'metrics': {
@@ -213,10 +233,10 @@ def save_model(model: keras.Model, output_dir: str, metrics: dict,
         'is_baseline': False,
     }
     
-    metadata_path = os.path.join(output_dir, 'metadata.json')
-    with open(metadata_path, 'w') as f:
-        json.dump(metadata, f, indent=2)
-    print(f"  ✓ Saved metadata: {metadata_path}")
+    config_path = os.path.join(output_dir, 'model_config.json')
+    with open(config_path, 'w') as f:
+        json.dump(model_config, f, indent=2)
+    print(f"  ✓ Saved model config: {config_path}")
     
     return version
 
@@ -259,38 +279,31 @@ def convert_to_tfjs(h5_path: str, tfjs_output_dir: str):
 
 def main():
     """Main retraining function"""
-    if len(sys.argv) < 3:
-        print("Usage: python retrain_model.py <db_path> <output_dir>")
+    if len(sys.argv) < 4:
+        print("Usage: python retrain_model.py <db_path> <output_dir> <current_model_dir>")
         sys.exit(1)
     
     db_path = sys.argv[1]
     output_dir = sys.argv[2]
-    current_model_dir = sys.argv[3]
+    current_model_dir = sys.argv[3]  # Current active model directory
     
     print("=" * 80)
     print("FRAUD DETECTION MODEL INCREMENTAL RETRAINING")
     print("=" * 80)
     print()
     
+    # DEFINE VARIABLES BEFORE THE TRY BLOCK
+    current_model_h5 = os.path.join(current_model_dir, 'fraud_detection_model.h5')
+    scaler_path = os.path.join(current_model_dir, 'scaler_params.json')
+    model_config_path = os.path.join(output_dir, 'model_config.json') 
+    
+    # NOW PRINT THEM
+    print(f"Current model directory: {current_model_dir}")
+    print(f"Current model H5: {current_model_h5}")
+    print(f"Scaler params: {scaler_path}")
+    print()
+    
     try:
-        # Determine base model path (assume baseline model location)
-        # This should be passed or detected from config
-        if len(sys.argv) < 4:
-            print("Usage: python retrain_model.py <db_path> <output_dir> <baseline_dir>")
-            sys.exit(1)
-
-        db_path = sys.argv[1]
-        output_dir = sys.argv[2]
-        baseline_dir = sys.argv[3]  # Pass baseline directory
-        base_model_h5 = os.path.join(baseline_dir, 'fraud_detection_model.h5')
-        scaler_path = os.path.join(baseline_dir, 'scaler_params.json')
-        metadata_path = os.path.join(output_dir, 'metadata.json')
-        
-        print(f"Current model directory: {current_model_dir}")
-        print(f"Current model H5: {current_model_h5}")
-        print(f"Scaler params: {scaler_path}")
-        print()
-        
         # Check if H5 model exists
         if not os.path.exists(current_model_h5):
             raise FileNotFoundError(
@@ -299,7 +312,7 @@ def main():
             )
         
         # Load current model metrics (if exists)
-        current_metrics = load_current_model_metrics(metadata_path)
+        current_metrics = load_current_model_metrics(model_config_path)
         
         # Load data
         df = load_feedback_data(db_path)
@@ -320,7 +333,7 @@ def main():
         print(f"Test samples: {len(X_test)}")
         
         # Load base model
-        model = load_base_model(base_model_h5)
+        model = load_base_model(current_model_h5)
         
         # Evaluate before retraining
         print("\n" + "=" * 80)
@@ -359,7 +372,7 @@ def main():
             print(f"Current Accuracy: {current_metrics['accuracy']:.4f}")
             print(f"New Accuracy:     {metrics_after['accuracy']:.4f}")
             
-            if metrics_after['accuracy'] <= current_metrics['accuracy']:
+            if metrics_after['accuracy'] < current_metrics['accuracy']:
                 print()
                 print("❌ NEW MODEL IS NOT BETTER")
                 print(f"   New model accuracy ({metrics_after['accuracy']:.4f}) <= Current ({current_metrics['accuracy']:.4f})")
@@ -391,7 +404,8 @@ def main():
             output_dir, 
             metrics_after,
             len(X_train),
-            len(X_test)
+            len(X_test),
+            scaler_params['feature_columns']
         )
         
         # Convert to TensorFlow.js
@@ -401,8 +415,13 @@ def main():
         # Copy scaler params to output directory
         import shutil
         output_scaler = os.path.join(output_dir, 'scaler_params.json')
-        shutil.copy(scaler_path, output_scaler)
-        print(f"  ✓ Copied scaler params: {output_scaler}")
+
+        if os.path.abspath(scaler_path) != os.path.abspath(output_scaler):
+            shutil.copy(scaler_path, output_scaler)
+            print(f"  ✓ Copied scaler params: {output_scaler}")
+        else:
+            print(f"  ✓ Scaler params already in output directory")
+
         
         print()
         print("=" * 80)

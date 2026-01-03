@@ -202,6 +202,58 @@ export class FraudGuard implements IFraudGuard {
     };
   }
 
+  /**
+   * Switch to a different model version
+   */
+  async switchModel(version: string): Promise<void> {
+    if (!this.storageManager) {
+      throw new Error("Storage must be enabled to switch models");
+    }
+
+    try {
+      this.logger.info(`Switching to model version: ${version}`);
+
+      // Get the model from database
+      const model = await this.storageManager.getModelByVersion(version);
+
+      if (!model) {
+        throw new Error(`Model version not found: ${version}`);
+      }
+
+      if (!model.model_path) {
+        throw new Error(`Model path not found for version: ${version}`);
+      }
+
+      // Check if model files exist
+      const fs = require("fs");
+      if (!fs.existsSync(model.model_path)) {
+        throw new Error(`Model directory not found: ${model.model_path}`);
+      }
+
+      // Set this model as active in database
+      await this.storageManager.setActiveModel(version);
+
+      // Reload the model
+      await this.predictionService.reload(model.model_path);
+
+      this.logger.info(`✓ Successfully switched to model: ${version}`);
+    } catch (error: any) {
+      this.logger.error("Failed to switch model", error);
+      throw error;
+    }
+  }
+
+  /**
+   * List all available model versions
+   */
+  async listModels(): Promise<any[]> {
+    if (!this.storageManager) {
+      throw new Error("Storage must be enabled to list models");
+    }
+
+    return await this.storageManager.getModelVersions();
+  }
+
   getModelInfo(): ModelInfo {
     if (!this.initialized) {
       throw new InitializationError("Fraud Guard not initialized");

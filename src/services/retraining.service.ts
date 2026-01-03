@@ -117,108 +117,159 @@ export class RetrainingService {
   /**
    * Retrain the model using feedback data
    */
-  async retrain(): Promise<RetrainingResult> {
-    this.logger.info("Starting model retraining...");
+async retrain(): Promise<RetrainingResult> {
+  this.logger.info('Starting model retraining...');
 
-    try {
-      // Check if we have enough feedback
-      const shouldRetrain = await this.shouldRetrain();
-      if (!shouldRetrain) {
-        const feedbackCount =
-          await this.storageManager.countPredictionsWithFeedback();
-        const minSamples = this.config.retraining?.min_samples || 100;
-        throw new Error(
-          `Not enough feedback data. Have ${feedbackCount}, need ${minSamples}`
-        );
-      }
+  try {
+    // Check if we have enough feedback
+    const shouldRetrain = await this.shouldRetrain();
+    if (!shouldRetrain) {
+      const feedbackCount = await this.storageManager.countPredictionsWithFeedback();
+      const minSamples = this.config.retraining?.min_samples || 100;
+      throw new Error(
+        `Not enough feedback data. Have ${feedbackCount}, need ${minSamples}`
+      );
+    }
 
-      // Get paths
-      const dbPath = this.config.storage.path!;
-      const projectPath = getProjectBasePath(this.config.project.name);
-      const outputDir = path.join(projectPath, "models", "retrained");
+    // Get paths
+    const dbPath = this.config.storage.path!;
+    const projectPath = getProjectBasePath(this.config.project.name);
+    
+    // ✅ CREATE VERSION-SPECIFIC DIRECTORY (not "retrained")
+    const version = new Date().toISOString().replace(/[-:]/g, '').split('.')[0].replace('T', '_');
+    const outputDir = path.join(projectPath, 'models', version);
 
-      // Get currently active model directory
-      const activeModel = await this.storageManager.getActiveModel();
-      let currentModelDir: string;
+    // Get currently active model directory
+    const activeModel = await this.storageManager.getActiveModel();
+    let currentModelDir: string;
 
-      if (activeModel && activeModel.path) {
-        currentModelDir = activeModel.path;
-        this.logger.info(
-          `Retraining from active model: ${activeModel.version}`
-        );
-      } else {
-        // Fall back to baseline
-        currentModelDir = path.join(os.homedir(), ".fraud-guard/baseline");
-        this.logger.info("No active model found - using baseline");
-      }
+    if (activeModel && activeModel.path) {
+      currentModelDir = activeModel.path;
+      this.logger.info(`Retraining from active model: ${activeModel.version}`);
+    } else {
+      // Fall back to baseline
+      currentModelDir = path.join(os.homedir(), '.fraud-guard/baseline');
+      this.logger.info('No active model found - using baseline');
+    }
 
-      // Ensure output directory exists
-      if (!fs.existsSync(outputDir)) {
-        fs.mkdirSync(outputDir, { recursive: true });
-      }
+    // Ensure output directory exists
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
 
-      // Get Python path
-      const pythonPath = this.getPythonPath();
+    // Get Python path
+    const pythonPath = this.getPythonPath();
 
-      // Get script path
-      const scriptPath = path.join(__dirname, "../../scripts/retrain_model.py");
+    // Get script path
+    const scriptPath = path.join(__dirname, '../../scripts/retrain_model.py');
 
-      this.logger.info(`Database: ${dbPath}`);
-      this.logger.info(`Output: ${outputDir}`);
-      this.logger.info(`Current model: ${currentModelDir}`);
-      this.logger.info(`Python: ${pythonPath}`);
+    this.logger.info(`Database: ${dbPath}`);
+    this.logger.info(`Output: ${outputDir}`);
+    this.logger.info(`Current model: ${currentModelDir}`);
+    this.logger.info(`Python: ${pythonPath}`);
 
-      // Run Python retraining script
-      const result = await this.runPythonScript(
-        pythonPath,
-        scriptPath,
-        dbPath,
-        outputDir,
-        currentModelDir // Pass current active model directory
+    // Run Python retraining script
+    const result = await this.runPythonScript(
+      pythonPath,
+      scriptPath,
+      dbPath,
+      outputDir,
+      currentModelDir
+    );
+
+    if (result.success) {
+      this.logger.info(`✓ Retraining successful! Version: ${result.version}`);
+      this.logger.info(`  Accuracy: ${result.metrics?.accuracy.toFixed(4)}`);
+
+      // Register new model in database
+      await this.storageManager.registerModelVersion(
+        result.version!,
+        result.output_dir!,
+        result.metrics!,
+        false  // Not baseline
       );
 
-      if (result.success) {
-        this.logger.info(`✓ Retraining successful! Version: ${result.version}`);
-        this.logger.info(`  Accuracy: ${result.metrics?.accuracy.toFixed(4)}`);
+      this.logger.info(`✓ Model registered and set as active`);
 
-        // Register new model in database
-        await this.storageManager.registerModelVersion(
-          result.version!,
-          result.output_dir!,
-          result.metrics!,
-          false // Not baseline
-        );
+      // ✅ CLEANUP OLD VERSIONS (keep last N)
+      const retainedVersions = this.config.retraining?.retained_versions || 5;
+      await this.cleanupOldModels(retainedVersions);
 
-        this.logger.info(`✓ Model registered and set as active`);
+      if (result.improvement) {
+        this.logger.info(`  Improvement: +${result.improvement.toFixed(4)}`);
+      }
+    } else {
+      this.logger.warn(`Retraining completed but new model not saved: ${result.error}`);
 
-        if (result.improvement) {
-          this.logger.info(`  Improvement: +${result.improvement.toFixed(4)}`);
-        }
-      } else {
-        this.logger.warn(
-          `Retraining completed but new model not saved: ${result.error}`
-        );
+      if (result.current_accuracy && result.new_accuracy) {
+        this.logger.info(`  Current accuracy: ${result.current_accuracy.toFixed(4)}`);
+        this.logger.info(`  New accuracy:     ${result.new_accuracy.toFixed(4)}`);
+        this.logger.info('  Keeping current model');
+      }
+      
+      // ✅ DELETE FAILED MODEL DIRECTORY
+      if (fs.existsSync(outputDir)) {
+        fs.rmSync(outputDir, { recursive: true, force: true });
+        this.logger.info('  Cleaned up incomplete model directory');
+      }
+    }
 
-        if (result.current_accuracy && result.new_accuracy) {
-          this.logger.info(
-            `  Current accuracy: ${result.current_accuracy.toFixed(4)}`
-          );
-          this.logger.info(
-            `  New accuracy:     ${result.new_accuracy.toFixed(4)}`
-          );
-          this.logger.info("  Keeping current model");
-        }
+    return result;
+  } catch (error: any) {
+    this.logger.error('Retraining failed', error);
+    return {
+      success: false,
+      error: error.message,
+    };
+  }
+}
+
+/**
+ * Cleanup old model versions, keeping only the most recent N
+ */
+private async cleanupOldModels(keepCount: number): Promise<void> {
+  try {
+    this.logger.info(`Cleaning up old models (keeping last ${keepCount})...`);
+
+    // Get all model versions from database, sorted by creation date
+    const allModels = await this.storageManager.getModelVersions();
+    
+    // Sort by created_at descending (newest first)
+    allModels.sort((a, b) => {
+      const dateA = new Date(a.created_at).getTime();
+      const dateB = new Date(b.created_at).getTime();
+      return dateB - dateA;
+    });
+
+    // Skip baseline models and keep only last N retrained models
+    const retrainedModels = allModels.filter(m => !m.is_baseline);
+    
+    if (retrainedModels.length <= keepCount) {
+      this.logger.info(`  Currently have ${retrainedModels.length} models, no cleanup needed`);
+      return;
+    }
+
+    // Models to delete (older than keepCount)
+    const modelsToDelete = retrainedModels.slice(keepCount);
+
+    for (const model of modelsToDelete) {
+      // Delete from filesystem
+      if (model.model_path && fs.existsSync(model.model_path)) {
+        fs.rmSync(model.model_path, { recursive: true, force: true });
+        this.logger.info(`  ✓ Deleted old model directory: ${model.version}`);
       }
 
-      return result;
-    } catch (error: any) {
-      this.logger.error("Retraining failed", error);
-      return {
-        success: false,
-        error: error.message,
-      };
+      // Delete from database
+      await this.storageManager.deleteModelVersion(model.version);
+      this.logger.info(`  ✓ Removed from database: ${model.version}`);
     }
+
+    this.logger.info(`✓ Cleanup complete - kept ${keepCount} most recent models`);
+  } catch (error: any) {
+    this.logger.error('Failed to cleanup old models', error);
+    // Don't throw - cleanup failure shouldn't break retraining
   }
+}
 
   /**
    * Run Python retraining script

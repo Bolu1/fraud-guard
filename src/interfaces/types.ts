@@ -154,6 +154,7 @@ export interface RetrainingConfig {
   python_venv?: string;
   min_samples?: number;
   schedule?: string;
+  retained_versions?: number;  
 }
 
 export interface LoggingConfig {

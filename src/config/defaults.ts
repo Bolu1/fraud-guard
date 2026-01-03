@@ -89,6 +89,7 @@ export const DEFAULT_CONFIG: Partial<FraudGuardConfig> = {
     python_venv: "bin/python",
     min_samples: 100,
     schedule: '0 2 * * *',
+    retained_versions: 5, 
   },
 
   logging: {

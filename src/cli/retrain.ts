@@ -35,6 +35,11 @@ async function main() {
   }
 
   try {
+    // ✅ INITIALIZE FRAUDGUARD FIRST (this initializes storage!)
+    console.log('Initializing...');
+    await guard.ensureInitialized();
+    console.log('');
+    
     console.log('Starting retraining process...');
     console.log('This may take 1-2 minutes...');
     console.log('');

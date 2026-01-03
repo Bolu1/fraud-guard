@@ -433,6 +433,75 @@ export class StorageManager {
     }
   }
 
+  /**
+   * Get a specific model version by version ID
+   */
+  async getModelByVersion(version: string): Promise<any | null> {
+    if (!this.db) {
+      throw new StorageError("Storage not initialized");
+    }
+
+    try {
+      const result = await this.db.get(
+        `SELECT * FROM model_versions WHERE version = ?`,
+        [version]
+      );
+
+      return result || null;
+    } catch (error: any) {
+      throw new StorageError(`Failed to get model version: ${error.message}`);
+    }
+  }
+
+  /**
+   * Set a specific model version as active
+   */
+  async setActiveModel(version: string): Promise<void> {
+    if (!this.db) {
+      throw new StorageError("Storage not initialized");
+    }
+
+    try {
+      // Deactivate all models
+      await this.db.run("UPDATE model_versions SET is_active = 0");
+
+      // Activate the specified model
+      const result = await this.db.run(
+        "UPDATE model_versions SET is_active = 1 WHERE version = ?",
+        [version]
+      );
+
+      if (result.changes === 0) {
+        throw new Error(`Model version not found: ${version}`);
+      }
+
+      this.logger.info(`Set active model: ${version}`);
+    } catch (error: any) {
+      throw new StorageError(`Failed to set active model: ${error.message}`);
+    }
+  }
+
+  /**
+   * Delete a model version from the database
+   */
+  async deleteModelVersion(version: string): Promise<void> {
+    if (!this.db) {
+      throw new StorageError("Storage not initialized");
+    }
+
+    try {
+      await this.db.run("DELETE FROM model_versions WHERE version = ?", [
+        version,
+      ]);
+
+      this.logger.debug(`Deleted model version: ${version}`);
+    } catch (error: any) {
+      throw new StorageError(
+        `Failed to delete model version: ${error.message}`
+      );
+    }
+  }
+
   private extractTimeFeatures(timestamp: Date): {
     hour: number;
     month: number;

@@ -7,6 +7,8 @@ const commands: Record<string, string> = {
   "model-info": "./model-info.js",
   "prediction-stats": "./prediction-stats.js",
   retrain: "./retrain.js",
+  "list-models": "./list-models.js",
+  "switch-model": "./switch-model.js",
 };
 
 if (!command || command == "--help" || command == "-h") {
@@ -20,6 +22,8 @@ if (!command || command == "--help" || command == "-h") {
   console.log("  model-info         View current model information");
   console.log("  prediction-stats   View feedback statistics");
   console.log("  retrain            Trigger manual model retraining");
+  console.log("  list-models        List all available model versions");
+  console.log("  switch-model       Switch to a different model version");
   console.log("");
   process.exit(0);
 }
@@ -30,7 +34,7 @@ if (!commandPath) {
   console.error(`Unknown command: ${command}`);
   console.error("");
   console.error(
-    "Available commands: setup-retraining, model-info, prediction-stats, retrain"
+    'Run "npx fraud-guard --help" to see available commands'
   );
   console.error("");
   process.exit(1);

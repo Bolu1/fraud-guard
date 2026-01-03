@@ -49,9 +49,8 @@ export function configFileExists(): boolean {
   return findConfigFile() !== null;
 }
 
-
 function createDefaultConfig(): FraudGuardConfig {
-  const defaultProjectName = 'default-project';
+  const defaultProjectName = "default-project";
 
   const config: FraudGuardConfig = {
     project: {
@@ -65,7 +64,8 @@ function createDefaultConfig(): FraudGuardConfig {
       enabled: false,
       path: getDefaultStoragePath(defaultProjectName),
       retention: {
-        predictions_days: DEFAULT_CONFIG.storage?.retention?.predictions_days || 90,
+        predictions_days:
+          DEFAULT_CONFIG.storage?.retention?.predictions_days || 90,
       },
     },
     model: {
@@ -80,14 +80,18 @@ function createDefaultConfig(): FraudGuardConfig {
     },
     retraining: {
       enabled: DEFAULT_CONFIG.retraining?.enabled || false,
-      python_path: DEFAULT_CONFIG.retraining?.python_path || 'python3',
-      python_venv: DEFAULT_CONFIG.retraining?.python_venv || 'bin/python',
+      python_path: DEFAULT_CONFIG.retraining?.python_path || "python3",
+      python_venv: DEFAULT_CONFIG.retraining?.python_venv || "bin/python",
       min_samples: DEFAULT_CONFIG.retraining?.min_samples || 100,
-      schedule: DEFAULT_CONFIG.retraining?.schedule || '0 2 * * *',
+      schedule: DEFAULT_CONFIG.retraining?.schedule || "0 2 * * *",
+      retained_versions: DEFAULT_CONFIG.retraining?.retained_versions || 5,
     },
     logging: {
       level: DEFAULT_CONFIG.logging?.level || LogLevel.INFO,
-      console: DEFAULT_CONFIG.logging?.console !== undefined ? DEFAULT_CONFIG.logging.console : true,
+      console:
+        DEFAULT_CONFIG.logging?.console !== undefined
+          ? DEFAULT_CONFIG.logging.console
+          : true,
     },
   };
 
@@ -129,8 +133,10 @@ function mergeConfigs(userConfig: Partial<FraudGuardConfig>): FraudGuardConfig {
       name: userConfig.project?.name,
     },
     thresholds: {
-      review: userConfig.thresholds?.review || DEFAULT_CONFIG.thresholds?.review,
-      reject: userConfig.thresholds?.reject || DEFAULT_CONFIG.thresholds?.reject,
+      review:
+        userConfig.thresholds?.review || DEFAULT_CONFIG.thresholds?.review,
+      reject:
+        userConfig.thresholds?.reject || DEFAULT_CONFIG.thresholds?.reject,
     },
     storage: {
       enabled: userConfig.storage?.enabled ?? DEFAULT_CONFIG.storage?.enabled,
@@ -154,19 +160,30 @@ function mergeConfigs(userConfig: Partial<FraudGuardConfig>): FraudGuardConfig {
           userConfig.velocity?.scoring?.velocity_weight ||
           DEFAULT_CONFIG.velocity?.scoring?.velocity_weight,
       },
-      frequency: userConfig.velocity?.frequency || DEFAULT_CONFIG.velocity?.frequency,
+      frequency:
+        userConfig.velocity?.frequency || DEFAULT_CONFIG.velocity?.frequency,
       amount: userConfig.velocity?.amount || DEFAULT_CONFIG.velocity?.amount,
       failed_transactions:
         userConfig.velocity?.failed_transactions ||
         DEFAULT_CONFIG.velocity?.failed_transactions,
     },
     retraining: {
-      enabled: userConfig.retraining?.enabled ?? DEFAULT_CONFIG.retraining?.enabled,
-      python_path: userConfig.retraining?.python_path || DEFAULT_CONFIG.retraining?.python_path,
-      python_venv: userConfig.retraining?.python_venv || DEFAULT_CONFIG.retraining?.python_venv,
+      enabled:
+        userConfig.retraining?.enabled ?? DEFAULT_CONFIG.retraining?.enabled,
+      python_path:
+        userConfig.retraining?.python_path ||
+        DEFAULT_CONFIG.retraining?.python_path,
+      python_venv:
+        userConfig.retraining?.python_venv ||
+        DEFAULT_CONFIG.retraining?.python_venv,
       min_samples:
-        userConfig.retraining?.min_samples || DEFAULT_CONFIG.retraining?.min_samples,
-      schedule: userConfig.retraining?.schedule || DEFAULT_CONFIG.retraining?.schedule,
+        userConfig.retraining?.min_samples ||
+        DEFAULT_CONFIG.retraining?.min_samples,
+      schedule:
+        userConfig.retraining?.schedule || DEFAULT_CONFIG.retraining?.schedule,
+      retained_versions:
+        userConfig.retraining?.retained_versions ||
+        DEFAULT_CONFIG.retraining?.retained_versions,
     },
     logging: {
       level: userConfig.logging?.level || DEFAULT_CONFIG.logging?.level,
