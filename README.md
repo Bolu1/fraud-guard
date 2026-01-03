@@ -13,6 +13,7 @@ An on-premise fraud detection package for Node.js applications with incremental 
 - 💾 Completely on-premise storage
 - 🔄 Automatic model retraining
 - 📊 Model versioning and rollback
+- 👨🏾‍💻 CLI tool utility tools
 - 🚀 Zero external dependencies for inference
 
 ---
