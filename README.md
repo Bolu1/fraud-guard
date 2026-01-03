@@ -1,7 +1,7 @@
 
 # fraud-guard
 
-An on-premise fraud detection package for Node.js applications with incremental learning for it's AI model and velocity checks.
+An on-premise fraud detection package for Node.js applications with incremental learning for the AI model and velocity checks.
 <!-- 
 [![npm version](https://badge.fury.io/js/fraud-guard.svg)](https://www.npmjs.com/package/fraud-guard)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) -->
