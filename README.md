@@ -10,7 +10,7 @@ An on-premise fraud detection package for Node.js applications with incremental 
 - 🤖 Real-time fraud detection using CNN model
 - 📈 Incremental learning - model improves with feedback
 - ⚡  Velocity checks for behavioral patterns
-- 💾 Completely on-premise storage
+- 💾 Completely on-premise
 - 🔄 Automatic model retraining
 - 📊 Model versioning and rollback
 - 👨🏾‍💻 CLI tool utility tools
